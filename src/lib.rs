@@ -122,6 +122,10 @@ pub fn prompt<'a, S: AsRef<str>>(
                     writer.queue(cursor::MoveTo(0, row))?;
                     writer.queue(Clear(ClearType::CurrentLine))?;
 
+                    let mut chars = line.chars();
+                    chars.next_back();
+                    let raw_line = chars.as_str().to_string();
+
                     let updated_line = if let Some(echo) = &options.echo {
                         let columns = UnicodeWidthStr::width(&line[..]);
                         if columns > 0 {
@@ -130,12 +134,10 @@ pub fn prompt<'a, S: AsRef<str>>(
                             String::new()
                         }
                     } else {
-                        let mut chars = line.chars();
-                        chars.next_back();
-                        chars.as_str().to_string()
+                        raw_line.clone()
                     };
                     redraw(writer, &updated_line)?;
-                    line = updated_line;
+                    line = raw_line;
                 }
                 KeyCode::Char(c) => {
                     // Handle Ctrl+c and Ctrl+d
