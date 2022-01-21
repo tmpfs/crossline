@@ -1,0 +1,10 @@
+[package]
+name = "crossterm-prompt"
+version = "0.1.0"
+edition = "2021"
+keywords = ["crossterm", "terminal", "prompt", "password"]
+
+[dependencies]
+crossterm = "0.22"
+anyhow = "1"
+unicode-width = "0.1"
