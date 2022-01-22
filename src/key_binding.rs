@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 /// Wraps a key event to distinguish between named
 /// key codes and arbitrary input.
 #[derive(Debug, Eq, PartialEq)]
-pub enum KeyType {
+enum KeyType {
     /// A named key event.
     Named,
     /// An arbitrary character.
@@ -62,10 +62,12 @@ impl KeyBindings {
     pub fn first(&self, event: &KeyEvent) -> Option<Vec<KeyAction>> {
         let kind = match event.code {
             KeyCode::Char(_) => {
-                if let KeyModifiers::NONE = event.modifiers {
-                    KeyType::Char
-                } else {
+                if event.modifiers.intersects(KeyModifiers::CONTROL)
+                    || event.modifiers.intersects(KeyModifiers::ALT)
+                {
                     KeyType::Named
+                } else {
+                    KeyType::Char
                 }
             }
             KeyCode::F(_) => KeyType::Func,
