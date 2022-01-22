@@ -47,19 +47,19 @@ pub fn prompt<'a, S: AsRef<str>>(
 }
 
 /// Show a prompt and parse the value to another type.
-pub fn parse<'a, T, E, S: AsRef<str>>(
+pub fn parse<'a, T, W, S: AsRef<str>>(
     prefix: S,
-    writer: &'a mut impl Write,
+    writer: &'a mut W,
     options: &PromptOptions,
-    parser: fn(&str) -> std::result::Result<T, E>,
 ) -> Result<T>
 where
-    E: Error + Send + Sync + 'static,
+    T: std::str::FromStr,
+    <T as std::str::FromStr>::Err: Error + Sync + Send + 'static,
+    W: Write,
 {
-    match prompt(prefix.as_ref(), writer, options) {
-        Ok(value) => Ok((parser)(&value[..])?),
-        Err(e) => Err(anyhow::Error::from(e)),
-    }
+    let value: String = prompt(prefix.as_ref(), writer, options)?;
+    let value: T = (&value[..]).parse::<T>()?;
+    Ok(value)
 }
 
 fn validate<'a, S: AsRef<str>>(
