@@ -132,7 +132,11 @@ fn run<'a, S: AsRef<str>>(
 ) -> Result<String> {
     enable_raw_mode()?;
 
-    let mut line = String::new();
+    let _guard = scopeguard::guard((), |_| {
+        let _ = disable_raw_mode();
+    });
+
+    let mut buffer = String::new();
 
     #[cfg(feature = "history")]
     let mut history_buffer = String::new();
@@ -158,13 +162,13 @@ fn run<'a, S: AsRef<str>>(
                                     writer,
                                     prompt_cols,
                                     (column, row),
-                                    &mut line,
+                                    &mut buffer,
                                     c,
                                 )?;
                             }
                             KeyAction::SubmitLine => {
                                 if let Some(multiline) = &options.multiline {
-                                    line.push('\n');
+                                    buffer.push('\n');
                                     write!(writer, "{}", '\n')?;
                                     writer
                                         .execute(cursor::MoveTo(0, row + 1))?;
@@ -183,7 +187,7 @@ fn run<'a, S: AsRef<str>>(
                                     if let Some(history) = &options.history {
                                         let mut writer =
                                             history.lock().unwrap();
-                                        writer.push(line.clone());
+                                        writer.push(buffer.clone());
                                     }
 
                                     writer
@@ -204,7 +208,7 @@ fn run<'a, S: AsRef<str>>(
                                     (column, row),
                                     (width, height),
                                     prompt_cols,
-                                    &line,
+                                    &buffer,
                                 );
 
                                 if column < position.0 {
@@ -216,15 +220,15 @@ fn run<'a, S: AsRef<str>>(
                             }
                             KeyAction::EraseCharacter => {
                                 let pos = column - prompt_cols;
-                                let (raw_line, new_col) = if pos > 0 {
-                                    let before = &line[0..pos as usize - 1];
-                                    let after = &line[pos as usize..];
+                                let (raw_buffer, new_col) = if pos > 0 {
+                                    let before = &buffer[0..pos as usize - 1];
+                                    let after = &buffer[pos as usize..];
                                     let mut s = String::new();
                                     s.push_str(before);
                                     s.push_str(after);
                                     (s, (prompt_cols + pos) - 1)
                                 } else {
-                                    (line.clone(), column)
+                                    (buffer.clone(), column)
                                 };
 
                                 let updated_line = if let Some(password) =
@@ -232,7 +236,7 @@ fn run<'a, S: AsRef<str>>(
                                 {
                                     if let Some(echo) = &password.echo {
                                         let columns =
-                                            UnicodeWidthStr::width(&line[..]);
+                                            UnicodeWidthStr::width(&buffer[..]);
                                         if columns > 0 {
                                             echo.to_string().repeat(columns - 1)
                                         } else {
@@ -242,7 +246,7 @@ fn run<'a, S: AsRef<str>>(
                                         String::new()
                                     }
                                 } else {
-                                    raw_line.clone()
+                                    raw_buffer.clone()
                                 };
                                 redraw(
                                     prefix.as_ref(),
@@ -250,7 +254,7 @@ fn run<'a, S: AsRef<str>>(
                                     (new_col, row),
                                     &updated_line,
                                 )?;
-                                line = raw_line;
+                                buffer = raw_buffer;
                             }
                             KeyAction::AbortPrompt => {
                                 writer.execute(cursor::MoveToNextLine(1))?;
@@ -275,7 +279,7 @@ fn run<'a, S: AsRef<str>>(
                                     (column, row),
                                     (width, height),
                                     prompt_cols,
-                                    &line,
+                                    &buffer,
                                 );
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
@@ -286,7 +290,7 @@ fn run<'a, S: AsRef<str>>(
                                     let mut history = history.lock().unwrap();
 
                                     if history.is_last() {
-                                        history_buffer = line.clone();
+                                        history_buffer = buffer.clone();
                                     }
 
                                     if let Some(history_line) =
@@ -304,7 +308,7 @@ fn run<'a, S: AsRef<str>>(
                                             position,
                                             history_line,
                                         )?;
-                                        line = history_line.clone();
+                                        buffer = history_line.clone();
                                     }
                                 }
                             }
@@ -325,7 +329,7 @@ fn run<'a, S: AsRef<str>>(
                                             position,
                                             history_line,
                                         )?;
-                                        line = history_line.clone();
+                                        buffer = history_line.clone();
                                     } else {
                                         let position = end_pos(
                                             (column, row),
@@ -340,7 +344,7 @@ fn run<'a, S: AsRef<str>>(
                                             position,
                                             &history_buffer,
                                         )?;
-                                        line = history_buffer.clone();
+                                        buffer = history_buffer.clone();
                                     }
                                 }
                             }
@@ -353,22 +357,22 @@ fn run<'a, S: AsRef<str>>(
         }
     }
 
-    disable_raw_mode()?;
-    Ok(line)
+    Ok(buffer)
 }
 
-// Redraw the current line
+// Redraw the prefix and value moving the cursor 
+// to the given position.
 fn redraw<S: AsRef<str>>(
     prefix: S,
     writer: &mut dyn Write,
     position: (u16, u16),
-    line: &str,
+    value: &str,
 ) -> Result<()> {
     let (col, row) = position;
     writer.queue(cursor::MoveTo(0, row))?;
     writer.queue(Clear(ClearType::CurrentLine))?;
     writer.write(prefix.as_ref().as_bytes())?;
-    writer.write(line.as_bytes())?;
+    writer.write(value.as_bytes())?;
     writer.queue(cursor::MoveTo(col, row))?;
     writer.flush()?;
     Ok(())
@@ -448,7 +452,7 @@ fn write_char<S: AsRef<str>>(
             )
         } else {
             // Password enabled but not echoing
-            ("".to_string(), "".to_string(), "".to_string())
+            (String::new(), String::new(), String::new())
         }
     } else {
         (before.to_string(), char_str, after.to_string())
