@@ -23,6 +23,9 @@ pub trait History {
     /// Determine if this history is empty.
     fn is_empty(&self) -> bool;
 
+    /// Determine if the cursor point to the last entry.
+    fn is_last(&self) -> bool;
+
     /// Remove all the history items and reset the cursor.
     fn clear(&mut self);
 
@@ -37,7 +40,7 @@ pub trait History {
 
     /// Move the current cursor position and get an item
     /// at the new position.
-    fn cursor(&mut self, amount: i16) -> Option<&String>;
+    fn move_by(&mut self, amount: i16) -> Option<&String>;
 
     /// Get the position of the cursor.
     fn position(&self) -> &Option<usize>;
@@ -85,6 +88,14 @@ impl History for MemoryHistory {
         self.items.is_empty()
     }
 
+    fn is_last(&self) -> bool {
+        if let Some(cursor) = self.cursor {
+            cursor == self.items.len()
+        } else {
+            false
+        }
+    }
+
     fn clear(&mut self) {
         self.items = vec![];
         self.cursor = None;
@@ -104,15 +115,21 @@ impl History for MemoryHistory {
         if self.items.len() > self.options.maximum_size as usize {
             self.items.remove(0);
         }
-        self.cursor = Some(self.items.len() - 1);
+        self.cursor = Some(self.items.len());
     }
 
     fn previous(&mut self) -> Option<&String> {
         if let Some(cursor) = self.cursor {
             if cursor > 0 {
-                self.cursor(-1)
+                if cursor > self.items.len() - 1 {
+                    self.cursor = Some(self.items.len() - 1);
+                    self.get()
+                } else {
+                    self.move_by(-1)
+                }
             } else {
-                None
+                self.cursor = Some(0);
+                self.get()
             }
         } else {
             None
@@ -122,16 +139,17 @@ impl History for MemoryHistory {
     fn next(&mut self) -> Option<&String> {
         if let Some(cursor) = self.cursor {
             if cursor < self.items.len() - 1 {
-                self.cursor(1)
+                self.move_by(1)
             } else {
-                None
+                self.cursor = Some(self.items.len());
+                self.get()
             }
         } else {
             None
         }
     }
 
-    fn cursor(&mut self, amount: i16) -> Option<&String> {
+    fn move_by(&mut self, amount: i16) -> Option<&String> {
         if let Some(cursor) = self.cursor {
             let new_pos = if amount.is_negative() {
                 cursor - amount.wrapping_abs() as i16 as usize
@@ -156,14 +174,14 @@ mod tests {
         assert_eq!(1, history.len());
 
         history.push("baz".to_string());
-        assert_eq!(&Some(1), history.position());
+        assert_eq!(&Some(2), history.position());
 
+        assert_eq!(Some(&("baz".to_string())), history.previous());
         assert_eq!(Some(&("foo".to_string())), history.previous());
-        assert_eq!(None, history.previous());
         assert_eq!(Some(&("baz".to_string())), history.next());
         assert_eq!(None, history.next());
 
-        assert_eq!(&Some(1), history.position());
-        assert_eq!(Some(&("baz".to_string())), history.get());
+        assert_eq!(&Some(2), history.position());
+        assert_eq!(None, history.get());
     }
 }

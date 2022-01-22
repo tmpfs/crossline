@@ -74,12 +74,6 @@ pub fn prompt<'a, S: AsRef<str>>(
         validate(prefix.as_ref(), writer, options)?
     };
 
-    #[cfg(feature = "history")]
-    if let Some(history) = &options.history {
-        let mut writer = history.lock().unwrap();
-        writer.push(value.clone());
-    }
-
     Ok(value)
 }
 
@@ -134,6 +128,9 @@ fn run<'a, S: AsRef<str>>(
 
     let mut line = String::new();
 
+    #[cfg(feature = "history")]
+    let mut history_buffer = String::new();
+
     let prompt_cols: u16 =
         UnicodeWidthStr::width(prompt.as_ref()).try_into()?;
 
@@ -156,7 +153,7 @@ fn run<'a, S: AsRef<str>>(
     };
 
     // Redraw the current line
-    let redraw = |writer: &mut dyn Write, row: u16,line: &str| -> Result<()> {
+    let redraw = |writer: &mut dyn Write, row: u16, line: &str| -> Result<()> {
         writer.queue(cursor::MoveTo(0, row))?;
         writer.queue(Clear(ClearType::CurrentLine))?;
 
@@ -197,6 +194,12 @@ fn run<'a, S: AsRef<str>>(
                             writer.execute(Clear(ClearType::CurrentLine))?;
                         }
                     } else {
+                        #[cfg(feature = "history")]
+                        if let Some(history) = &options.history {
+                            let mut writer = history.lock().unwrap();
+                            writer.push(line.clone());
+                        }
+
                         //write!(&mut writer, "{}", '\n')?;
                         writer.execute(cursor::MoveToNextLine(1))?;
                         break 'prompt;
@@ -206,10 +209,15 @@ fn run<'a, S: AsRef<str>>(
                 {
                     #[cfg(feature = "history")]
                     if let Some(history) = &options.history {
-                        if let Some(history_line) =
-                            history.lock().unwrap().previous()
-                        {
+                        let mut history = history.lock().unwrap();
+
+                        if history.is_last() {
+                            history_buffer = line.clone();
+                        }
+
+                        if let Some(history_line) = history.previous() {
                             redraw(writer, row, history_line)?;
+                            line = history_line.clone();
                         }
                     }
                 }
@@ -217,12 +225,13 @@ fn run<'a, S: AsRef<str>>(
                 {
                     #[cfg(feature = "history")]
                     if let Some(history) = &options.history {
-                        if let Some(history_line) =
-                            history.lock().unwrap().next()
-                        {
+                        let mut history = history.lock().unwrap();
+                        if let Some(history_line) = history.next() {
                             redraw(writer, row, history_line)?;
+                            line = history_line.clone();
                         } else {
-                            redraw(writer, row, &line)?;
+                            redraw(writer, row, &history_buffer)?;
+                            line = history_buffer.clone();
                         }
                     }
                 }

@@ -20,11 +20,11 @@ fn main() -> Result<()> {
             match &command[..] {
                 "q" | "quit" => {
                     std::process::exit(0);
-                },
+                }
                 _ => {}
             }
             Ok::<(), Error>(())
-        }
+        },
     )?;
 
     Ok(())
