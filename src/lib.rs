@@ -8,6 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
 };
+use std::borrow::Cow;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
@@ -24,6 +25,12 @@ pub struct PromptOptions {
     ///
     /// Use Ctrl+c or Ctrl+d to exit the prompt.
     pub multiline: Option<MultiLine>,
+
+    /// Options for validating the input.
+    pub validation: Option<Validation>,
+
+    /// Options for transforming the value.
+    pub transformer: Option<Transformer>,
 }
 
 impl PromptOptions {
@@ -33,6 +40,8 @@ impl PromptOptions {
             password: Some(password),
             multiline: Default::default(),
             required: Default::default(),
+            validation: Default::default(),
+            transformer: Default::default(),
         }
     }
 
@@ -42,6 +51,8 @@ impl PromptOptions {
             password: Default::default(),
             multiline: Some(multiline),
             required: Default::default(),
+            validation: Default::default(),
+            transformer: Default::default(),
         }
     }
 
@@ -51,6 +62,30 @@ impl PromptOptions {
             password: Default::default(),
             multiline: Default::default(),
             required: Some(required),
+            validation: Default::default(),
+            transformer: Default::default(),
+        }
+    }
+
+    /// Create the prompt options for a validation.
+    pub fn new_validation(validation: Validation) -> Self {
+        Self {
+            password: Default::default(),
+            multiline: Default::default(),
+            required: Default::default(),
+            validation: Some(validation),
+            transformer: Default::default(),
+        }
+    }
+
+    /// Create the prompt options for a transformer.
+    pub fn new_transformer(transformer: Transformer) -> Self {
+        Self {
+            password: Default::default(),
+            multiline: Default::default(),
+            required: Default::default(),
+            validation: Default::default(),
+            transformer: Some(transformer),
         }
     }
 }
@@ -74,8 +109,7 @@ pub struct Required {
 pub struct PassWord {
     /// Character to echo for each character input.
     ///
-    /// Typically used to obscure input for sensitive
-    /// data like passwords.
+    /// Default is to print the asterisk ('*').
     pub echo: Option<char>,
 }
 
@@ -92,17 +126,45 @@ pub struct MultiLine {
     pub repeat_prompt: bool,
 }
 
+/// The options for validation.
+pub struct Validation {
+    /// Closure to validate the value.
+    pub validate: Box<dyn Fn(&str) -> bool>,
+}
+
+impl Default for Validation {
+    fn default() -> Self {
+        Self {
+            validate: Box::new(|_| true),
+        }
+    }
+}
+
+/// The options for transforming the value.
+pub struct Transformer {
+    /// Closure to transform the value.
+    pub transform: Box<dyn Fn(&str) -> Cow<'_, str>>,
+}
+
+impl Default for Transformer {
+    fn default() -> Self {
+        Self {
+            transform: Box::new(|value| Cow::Borrowed(value)),
+        }
+    }
+}
+
 /// Show a prompt.
 pub fn prompt<'a, S: AsRef<str>>(
     prompt: S,
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
-    let value = if let Some(required) = &options.required {
+    if let Some(required) = &options.required {
         let mut value;
         let mut attempts = 0u16;
         loop {
-            value = run(prompt.as_ref(), writer, options)?;
+            value = validate(prompt.as_ref(), writer, options)?;
             let check_value = if required.trim {
                 value.trim()
             } else {
@@ -116,10 +178,35 @@ pub fn prompt<'a, S: AsRef<str>>(
                 break;
             }
         }
-        value
+        Ok(value)
+    } else {
+        validate(prompt.as_ref(), writer, options)
+    }
+}
+
+fn validate<'a, S: AsRef<str>>(
+    prompt: S,
+    writer: &'a mut impl Write,
+    options: &PromptOptions,
+) -> Result<String> {
+    let mut value = if let Some(validation) = &options.validation {
+        let value = run(prompt.as_ref(), writer, options)?;
+        if (validation.validate)(&value) {
+            value
+        } else {
+            validate(prompt.as_ref(), writer, options)?
+        }
     } else {
         run(prompt.as_ref(), writer, options)?
     };
+
+    if let Some(transformer) = &options.transformer {
+        value = match (transformer.transform)(&value) {
+            Cow::Borrowed(_) => value,
+            Cow::Owned(s) => s,
+        }
+    }
+
     Ok(value)
 }
 
