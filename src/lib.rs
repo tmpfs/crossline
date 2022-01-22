@@ -2,7 +2,7 @@
 #![feature(doc_cfg)]
 
 //! Prompt library for crossterm.
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crossterm::{
     cursor,
     event::{read, Event},
@@ -53,6 +53,10 @@ pub fn prompt<'a, S: AsRef<str>>(
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
+    if prefix.as_ref().len() > u16::MAX as usize {
+        bail!("prompt prefix is too long");
+    }
+
     let value = if let Some(required) = &options.required {
         let mut value;
         let mut attempts = 0u16;
@@ -96,19 +100,19 @@ where
 }
 
 fn validate<'a, S: AsRef<str>>(
-    prompt: S,
+    prefix: S,
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
     let mut value = if let Some(validation) = &options.validation {
-        let value = run(prompt.as_ref(), writer, options)?;
+        let value = run(prefix.as_ref(), writer, options)?;
         if (validation.validate)(&value) {
             value
         } else {
-            validate(prompt.as_ref(), writer, options)?
+            validate(prefix.as_ref(), writer, options)?
         }
     } else {
-        run(prompt.as_ref(), writer, options)?
+        run(prefix.as_ref(), writer, options)?
     };
 
     if let Some(transformer) = &options.transformer {
@@ -122,7 +126,7 @@ fn validate<'a, S: AsRef<str>>(
 }
 
 fn run<'a, S: AsRef<str>>(
-    prompt: S,
+    prefix: S,
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
@@ -134,10 +138,10 @@ fn run<'a, S: AsRef<str>>(
     let mut history_buffer = String::new();
 
     let prompt_cols: u16 =
-        UnicodeWidthStr::width(prompt.as_ref()).try_into()?;
+        UnicodeWidthStr::width(prefix.as_ref()).try_into()?;
 
     // Write the initial prompt
-    write_bytes(writer, prompt.as_ref().as_bytes())?;
+    write_bytes(writer, prefix.as_ref().as_bytes())?;
 
     'prompt: loop {
         let (width, height) = size()?;
@@ -149,7 +153,7 @@ fn run<'a, S: AsRef<str>>(
                         match action {
                             KeyAction::WriteChar(c) => {
                                 write_char(
-                                    prompt.as_ref(),
+                                    prefix.as_ref(),
                                     options,
                                     writer,
                                     prompt_cols,
@@ -167,7 +171,7 @@ fn run<'a, S: AsRef<str>>(
                                     if multiline.repeat_prompt {
                                         write_bytes(
                                             writer,
-                                            prompt.as_ref().as_bytes(),
+                                            prefix.as_ref().as_bytes(),
                                         )?;
                                     } else {
                                         writer.execute(Clear(
@@ -241,7 +245,7 @@ fn run<'a, S: AsRef<str>>(
                                     raw_line.clone()
                                 };
                                 redraw(
-                                    prompt.as_ref(),
+                                    prefix.as_ref(),
                                     writer,
                                     (new_col, row),
                                     &updated_line,
@@ -257,7 +261,7 @@ fn run<'a, S: AsRef<str>>(
                                 writer.queue(cursor::MoveTo(0, 0))?;
                                 write_bytes(
                                     writer,
-                                    prompt.as_ref().as_bytes(),
+                                    prefix.as_ref().as_bytes(),
                                 )?;
                             }
                             KeyAction::MoveToLineBegin => {
@@ -276,8 +280,8 @@ fn run<'a, S: AsRef<str>>(
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
+                            #[cfg(feature = "history")]
                             KeyAction::HistoryPrevious => {
-                                #[cfg(feature = "history")]
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
 
@@ -295,7 +299,7 @@ fn run<'a, S: AsRef<str>>(
                                             &history_line,
                                         );
                                         redraw(
-                                            prompt.as_ref(),
+                                            prefix.as_ref(),
                                             writer,
                                             position,
                                             history_line,
@@ -304,8 +308,8 @@ fn run<'a, S: AsRef<str>>(
                                     }
                                 }
                             }
+                            #[cfg(feature = "history")]
                             KeyAction::HistoryNext => {
-                                #[cfg(feature = "history")]
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
                                     if let Some(history_line) = history.next() {
@@ -316,7 +320,7 @@ fn run<'a, S: AsRef<str>>(
                                             &history_line,
                                         );
                                         redraw(
-                                            prompt.as_ref(),
+                                            prefix.as_ref(),
                                             writer,
                                             position,
                                             history_line,
@@ -331,7 +335,7 @@ fn run<'a, S: AsRef<str>>(
                                         );
 
                                         redraw(
-                                            prompt.as_ref(),
+                                            prefix.as_ref(),
                                             writer,
                                             position,
                                             &history_buffer,
@@ -390,16 +394,6 @@ fn end_pos(
         todo!("calculate with long wrapped value");
     }
 }
-
-/*
-// Compute the last column
-let end_col = |prompt: &str, line: &str| -> Result<u16> {
-    let mut all = prompt.to_string();
-    all.push_str(line);
-    let cols: u16 = UnicodeWidthStr::width(&all[..]).try_into()?;
-    Ok(cols)
-};
-*/
 
 // Write bytes to the sink and flush the output.
 fn write_bytes(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {

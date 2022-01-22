@@ -79,7 +79,8 @@ impl PromptOptions {
         self
     }
 
-    #[cfg(feature = "history")]
+    #[cfg(any(feature = "history", doc))]
+    #[doc(cfg(feature = "history"))]
     /// Configure with a history.
     pub fn history(mut self, history: Box<Mutex<dyn History>>) -> Self {
         self.history = Some(history);

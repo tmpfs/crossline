@@ -45,9 +45,13 @@ pub enum KeyAction {
     MoveToLineEnd,
 
     /// Go to previous history item.
+    #[cfg(any(feature = "history", doc))]
+    #[doc(cfg(feature = "history"))]
     HistoryPrevious,
 
     /// Go to next history item.
+    #[cfg(any(feature = "history", doc))]
+    #[doc(cfg(feature = "history"))]
     HistoryNext,
 }
 
@@ -145,6 +149,7 @@ impl Default for KeyBindings {
                 }),
                 actions: Box::new(|_| vec![KeyAction::EraseCharacter]),
             },
+            #[cfg(any(feature = "history", doc))]
             // Up
             KeyDefinition {
                 kind: KeyType::Named,
@@ -154,6 +159,7 @@ impl Default for KeyBindings {
                 }),
                 actions: Box::new(|_| vec![KeyAction::HistoryPrevious]),
             },
+            #[cfg(any(feature = "history", doc))]
             // Down
             KeyDefinition {
                 kind: KeyType::Named,
