@@ -58,7 +58,7 @@ pub struct KeyBindings {
 
 impl KeyBindings {
     /// Find the actions for the first key definition
-    /// that matches the give key event.
+    /// that matches the given key event.
     pub fn first(&self, event: &KeyEvent) -> Option<Vec<KeyAction>> {
         let kind = match event.code {
             KeyCode::Char(_) => {
