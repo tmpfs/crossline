@@ -16,6 +16,9 @@ use unicode_width::UnicodeWidthStr;
 mod options;
 pub use options::*;
 
+#[cfg(feature = "shell")]
+mod shell;
+
 /// Show a prompt.
 pub fn prompt<'a, S: AsRef<str>>(
     prefix: S,

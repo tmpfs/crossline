@@ -8,3 +8,7 @@ keywords = ["crossterm", "terminal", "prompt", "password"]
 crossterm = "0.22"
 anyhow = "1"
 unicode-width = "0.1"
+
+[features]
+default = []
+shell = []

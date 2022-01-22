@@ -118,6 +118,9 @@ pub struct MultiLine {
 /// The options for validation.
 pub struct Validation {
     /// Closure to validate the value.
+    ///
+    /// When a value is invalid (`false`)
+    /// a prompt is automatically displayed again.
     pub validate: Box<dyn Fn(&str) -> bool>,
 }
 
