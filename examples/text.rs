@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crossterm_prompt::{prompt, PromptOptions};
+use crossterm_prompt::prompt;
 
 fn main() -> Result<()> {
     let mut stdout = std::io::stdout();

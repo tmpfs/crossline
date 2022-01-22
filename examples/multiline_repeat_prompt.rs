@@ -5,7 +5,7 @@ use crossterm_prompt::{prompt, MultiLine, PromptOptions};
 fn main() -> Result<()> {
     let mut stdout = std::io::stdout();
     let options = PromptOptions {
-        echo: None,
+        password: None,
         multiline: Some(MultiLine {
             repeat_prompt: true,
         }),

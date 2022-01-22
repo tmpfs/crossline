@@ -5,26 +5,37 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{read, Event, KeyCode, KeyModifiers},
-    execute, /* queue, */
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
 };
-use std::io::{stdout, Write};
+use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
 /// The options to use when creating a prompt.
 #[derive(Default)]
 pub struct PromptOptions {
-    /// Character to echo for each character input.
-    ///
-    /// Typically used to obscure input for sensitive
-    /// data like passwords.
-    pub echo: Option<char>,
+    /// Options for password capture.
+    pub password: Option<PassWord>,
 
     /// Capture multiline input.
     ///
     /// Use Ctrl+c or Ctrl+d to exit the prompt.
     pub multiline: Option<MultiLine>,
+}
+
+/// The options for password mode.
+pub struct PassWord {
+    /// Character to echo for each character input.
+    ///
+    /// Typically used to obscure input for sensitive
+    /// data like passwords.
+    pub echo: Option<char>,
+}
+
+impl Default for PassWord {
+    fn default() -> Self {
+        Self { echo: Some('*') }
+    }
 }
 
 /// The options for multiline mode.
@@ -36,6 +47,15 @@ pub struct MultiLine {
 
 /// Show a prompt.
 pub fn prompt<'a, S: AsRef<str>>(
+    prompt: S,
+    writer: &'a mut impl Write,
+    options: &PromptOptions,
+) -> Result<String> {
+    let value = run(prompt.as_ref(), writer, options)?;
+    Ok(value)
+}
+
+fn run<'a, S: AsRef<str>>(
     prompt: S,
     writer: &'a mut impl Write,
     options: &PromptOptions,
@@ -77,8 +97,10 @@ pub fn prompt<'a, S: AsRef<str>>(
     let write_char =
         |writer: &mut dyn Write, c: char, line: &mut String| -> Result<()> {
             line.push(c);
-            if let Some(echo) = &options.echo {
-                write!(writer, "{}", echo)?;
+            if let Some(password) = &options.password {
+                if let Some(echo) = &password.echo {
+                    write!(writer, "{}", echo)?;
+                }
             } else {
                 write!(writer, "{}", c)?;
             }
@@ -126,10 +148,15 @@ pub fn prompt<'a, S: AsRef<str>>(
                     chars.next_back();
                     let raw_line = chars.as_str().to_string();
 
-                    let updated_line = if let Some(echo) = &options.echo {
-                        let columns = UnicodeWidthStr::width(&line[..]);
-                        if columns > 0 {
-                            echo.to_string().repeat(columns - 1)
+                    let updated_line = if let Some(password) = &options.password
+                    {
+                        if let Some(echo) = &password.echo {
+                            let columns = UnicodeWidthStr::width(&line[..]);
+                            if columns > 0 {
+                                echo.to_string().repeat(columns - 1)
+                            } else {
+                                String::new()
+                            }
                         } else {
                             String::new()
                         }
