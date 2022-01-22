@@ -59,7 +59,11 @@ impl PromptOptions {
 #[derive(Default)]
 pub struct Required {
     /// Trim the value before checking it is empty.
+    ///
+    /// Does not affect the underlying value which may
+    /// still contain leading and trailing whitespace.
     pub trim: bool,
+
     /// Maximum number of attempts before giving up.
     ///
     /// Zero indicates to keep repeating the prompt forever.
@@ -99,12 +103,13 @@ pub fn prompt<'a, S: AsRef<str>>(
         let mut attempts = 0u16;
         loop {
             value = run(prompt.as_ref(), writer, options)?;
-            if required.trim {
-                value = value.trim().to_string();
-            }
-
+            let check_value = if required.trim {
+                value.trim()
+            } else {
+                &value[..]
+            };
             attempts += 1;
-            if !value.is_empty()
+            if !check_value.is_empty()
                 || (required.max_attempts > 0
                     && attempts >= required.max_attempts)
             {
