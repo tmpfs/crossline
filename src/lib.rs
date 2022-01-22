@@ -5,7 +5,7 @@
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{read, Event, KeyCode, KeyModifiers},
+    event::{read, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
 };
@@ -14,7 +14,9 @@ use std::error::Error;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
 
+mod key_binding;
 mod options;
+pub use key_binding::*;
 pub use options::*;
 
 #[cfg(any(feature = "history", doc))]
@@ -180,135 +182,278 @@ fn run<'a, S: AsRef<str>>(
 
     'prompt: loop {
         let (column, row) = cursor::position()?;
-
         match read()? {
-            Event::Key(event) => match event.code {
-                KeyCode::Enter => {
-                    if let Some(multiline) = &options.multiline {
-                        line.push('\n');
-                        write!(writer, "{}", '\n')?;
-                        writer.execute(cursor::MoveTo(0, row + 1))?;
-                        if multiline.repeat_prompt {
-                            write_bytes(writer, prompt.as_ref().as_bytes())?;
-                        } else {
-                            writer.execute(Clear(ClearType::CurrentLine))?;
-                        }
-                    } else {
-                        #[cfg(feature = "history")]
-                        if let Some(history) = &options.history {
-                            let mut writer = history.lock().unwrap();
-                            writer.push(line.clone());
-                        }
+            Event::Key(event) => {
+                let kind = match event.code {
+                    KeyCode::Char(_) => KeyType::Char,
+                    KeyCode::F(_) => KeyType::Func,
+                    _ => KeyType::Named,
+                };
 
-                        //write!(&mut writer, "{}", '\n')?;
-                        writer.execute(cursor::MoveToNextLine(1))?;
-                        break 'prompt;
-                    }
-                }
-                KeyCode::Up =>
-                {
-                    #[cfg(feature = "history")]
-                    if let Some(history) = &options.history {
-                        let mut history = history.lock().unwrap();
-
-                        if history.is_last() {
-                            history_buffer = line.clone();
-                        }
-
-                        if let Some(history_line) = history.previous() {
-                            redraw(writer, row, history_line)?;
-                            line = history_line.clone();
-                        }
-                    }
-                }
-                KeyCode::Down =>
-                {
-                    #[cfg(feature = "history")]
-                    if let Some(history) = &options.history {
-                        let mut history = history.lock().unwrap();
-                        if let Some(history_line) = history.next() {
-                            redraw(writer, row, history_line)?;
-                            line = history_line.clone();
-                        } else {
-                            redraw(writer, row, &history_buffer)?;
-                            line = history_buffer.clone();
-                        }
-                    }
-                }
-                KeyCode::Left => {
-                    if column > prompt_cols {
-                        writer.execute(cursor::MoveTo(column - 1, row))?;
-                    }
-                }
-                KeyCode::Right => {
-                    let end = end_col(prompt.as_ref(), &line)?;
-                    if column < end {
-                        writer.execute(cursor::MoveTo(column + 1, row))?;
-                    }
-                }
-                KeyCode::Backspace => {
-                    let mut chars = line.chars();
-                    chars.next_back();
-                    let raw_line = chars.as_str().to_string();
-
-                    let updated_line = if let Some(password) = &options.password
-                    {
-                        if let Some(echo) = &password.echo {
-                            let columns = UnicodeWidthStr::width(&line[..]);
-                            if columns > 0 {
-                                echo.to_string().repeat(columns - 1)
-                            } else {
-                                String::new()
+                if let Some(actions) = options.bindings.first(kind, &event) {
+                    for action in actions {
+                        match action {
+                            KeyAction::WriteChar(c) => {
+                                write_char(writer, c, &mut line)?;
                             }
-                        } else {
-                            String::new()
+                            KeyAction::SubmitLine => {
+                                if let Some(multiline) = &options.multiline {
+                                    line.push('\n');
+                                    write!(writer, "{}", '\n')?;
+                                    writer
+                                        .execute(cursor::MoveTo(0, row + 1))?;
+                                    if multiline.repeat_prompt {
+                                        write_bytes(
+                                            writer,
+                                            prompt.as_ref().as_bytes(),
+                                        )?;
+                                    } else {
+                                        writer.execute(Clear(
+                                            ClearType::CurrentLine,
+                                        ))?;
+                                    }
+                                } else {
+                                    #[cfg(feature = "history")]
+                                    if let Some(history) = &options.history {
+                                        let mut writer =
+                                            history.lock().unwrap();
+                                        writer.push(line.clone());
+                                    }
+
+                                    //write!(&mut writer, "{}", '\n')?;
+                                    writer
+                                        .execute(cursor::MoveToNextLine(1))?;
+                                    break 'prompt;
+                                }
+                            }
+                            KeyAction::MoveCursorLeft => {
+                                if column > prompt_cols {
+                                    writer.execute(cursor::MoveTo(
+                                        column - 1,
+                                        row,
+                                    ))?;
+                                }
+                            }
+                            KeyAction::MoveCursorRight => {
+                                let end = end_col(prompt.as_ref(), &line)?;
+                                if column < end {
+                                    writer.execute(cursor::MoveTo(
+                                        column + 1,
+                                        row,
+                                    ))?;
+                                }
+                            }
+                            KeyAction::EraseLastCharacter => {
+                                let mut chars = line.chars();
+                                chars.next_back();
+                                let raw_line = chars.as_str().to_string();
+
+                                let updated_line = if let Some(password) =
+                                    &options.password
+                                {
+                                    if let Some(echo) = &password.echo {
+                                        let columns =
+                                            UnicodeWidthStr::width(&line[..]);
+                                        if columns > 0 {
+                                            echo.to_string().repeat(columns - 1)
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    raw_line.clone()
+                                };
+                                redraw(writer, row, &updated_line)?;
+                                line = raw_line;
+                            }
+                            KeyAction::AbortPrompt => {
+                                writer.execute(cursor::MoveToNextLine(1))?;
+                                break 'prompt;
+                            }
+                            KeyAction::ClearScreen => {
+                                writer.queue(Clear(ClearType::All))?;
+                                writer.queue(cursor::MoveTo(0, 0))?;
+                                write_bytes(
+                                    writer,
+                                    prompt.as_ref().as_bytes(),
+                                )?;
+                            }
+                            KeyAction::MoveToLineBegin => {
+                                writer.execute(cursor::MoveTo(
+                                    prompt_cols,
+                                    row,
+                                ))?;
+                            }
+                            KeyAction::MoveToLineEnd => {
+                                let end = end_col(prompt.as_ref(), &line)?;
+                                writer.execute(cursor::MoveTo(end, row))?;
+                            }
+                            KeyAction::HistoryPrevious => {
+                                #[cfg(feature = "history")]
+                                if let Some(history) = &options.history {
+                                    let mut history = history.lock().unwrap();
+
+                                    if history.is_last() {
+                                        history_buffer = line.clone();
+                                    }
+
+                                    if let Some(history_line) =
+                                        history.previous()
+                                    {
+                                        redraw(writer, row, history_line)?;
+                                        line = history_line.clone();
+                                    }
+                                }
+                            }
+                            KeyAction::HistoryNext => {
+                                #[cfg(feature = "history")]
+                                if let Some(history) = &options.history {
+                                    let mut history = history.lock().unwrap();
+                                    if let Some(history_line) = history.next() {
+                                        redraw(writer, row, history_line)?;
+                                        line = history_line.clone();
+                                    } else {
+                                        redraw(writer, row, &history_buffer)?;
+                                        line = history_buffer.clone();
+                                    }
+                                }
+                            }
                         }
-                    } else {
-                        raw_line.clone()
-                    };
-                    redraw(writer, row, &updated_line)?;
-                    line = raw_line;
-                }
-                KeyCode::Char(c) => {
-                    // Handle Ctrl+c and Ctrl+d
-                    if (c == 'c'
-                        && event.modifiers.intersects(KeyModifiers::CONTROL))
-                        || (c == 'd'
-                            && event
-                                .modifiers
-                                .intersects(KeyModifiers::CONTROL))
-                    {
-                        writer.execute(cursor::MoveToNextLine(1))?;
-                        break 'prompt;
-                    // Handle Ctrl+l to clear the screen
-                    } else if c == 'l'
-                        && event.modifiers.intersects(KeyModifiers::CONTROL)
-                    {
-                        writer.queue(Clear(ClearType::All))?;
-                        writer.queue(cursor::MoveTo(0, 0))?;
-                        write_bytes(writer, prompt.as_ref().as_bytes())?;
-                    // Handle Ctrl+a, go to line start
-                    } else if c == 'a'
-                        && event.modifiers.intersects(KeyModifiers::CONTROL)
-                    {
-                        writer.execute(cursor::MoveTo(prompt_cols, row))?;
-                    // Handle Ctrl+e, go to line end
-                    } else if c == 'e'
-                        && event.modifiers.intersects(KeyModifiers::CONTROL)
-                    {
-                        let end = end_col(prompt.as_ref(), &line)?;
-                        writer.execute(cursor::MoveTo(end, row))?;
-                    // Print the character
-                    } else {
-                        write_char(writer, c, &mut line)?;
                     }
                 }
-                _ => {
-                    //println!("{:?}", event);
-                }
-            },
+            }
             Event::Mouse(_event) => {}
-            Event::Resize(_width, _height) => {}
+            Event::Resize(_width, _height) => {} /*
+                                                 Event::Key(event) => match event.code {
+                                                     KeyCode::Enter => {
+                                                         if let Some(multiline) = &options.multiline {
+                                                             line.push('\n');
+                                                             write!(writer, "{}", '\n')?;
+                                                             writer.execute(cursor::MoveTo(0, row + 1))?;
+                                                             if multiline.repeat_prompt {
+                                                                 write_bytes(writer, prompt.as_ref().as_bytes())?;
+                                                             } else {
+                                                                 writer.execute(Clear(ClearType::CurrentLine))?;
+                                                             }
+                                                         } else {
+                                                             #[cfg(feature = "history")]
+                                                             if let Some(history) = &options.history {
+                                                                 let mut writer = history.lock().unwrap();
+                                                                 writer.push(line.clone());
+                                                             }
+
+                                                             //write!(&mut writer, "{}", '\n')?;
+                                                             writer.execute(cursor::MoveToNextLine(1))?;
+                                                             break 'prompt;
+                                                         }
+                                                     }
+                                                     KeyCode::Up =>
+                                                     {
+                                                         #[cfg(feature = "history")]
+                                                         if let Some(history) = &options.history {
+                                                             let mut history = history.lock().unwrap();
+
+                                                             if history.is_last() {
+                                                                 history_buffer = line.clone();
+                                                             }
+
+                                                             if let Some(history_line) = history.previous() {
+                                                                 redraw(writer, row, history_line)?;
+                                                                 line = history_line.clone();
+                                                             }
+                                                         }
+                                                     }
+                                                     KeyCode::Down =>
+                                                     {
+                                                         #[cfg(feature = "history")]
+                                                         if let Some(history) = &options.history {
+                                                             let mut history = history.lock().unwrap();
+                                                             if let Some(history_line) = history.next() {
+                                                                 redraw(writer, row, history_line)?;
+                                                                 line = history_line.clone();
+                                                             } else {
+                                                                 redraw(writer, row, &history_buffer)?;
+                                                                 line = history_buffer.clone();
+                                                             }
+                                                         }
+                                                     }
+                                                     KeyCode::Left => {
+                                                         if column > prompt_cols {
+                                                             writer.execute(cursor::MoveTo(column - 1, row))?;
+                                                         }
+                                                     }
+                                                     KeyCode::Right => {
+                                                         let end = end_col(prompt.as_ref(), &line)?;
+                                                         if column < end {
+                                                             writer.execute(cursor::MoveTo(column + 1, row))?;
+                                                         }
+                                                     }
+                                                     KeyCode::Backspace => {
+                                                         let mut chars = line.chars();
+                                                         chars.next_back();
+                                                         let raw_line = chars.as_str().to_string();
+
+                                                         let updated_line = if let Some(password) = &options.password
+                                                         {
+                                                             if let Some(echo) = &password.echo {
+                                                                 let columns = UnicodeWidthStr::width(&line[..]);
+                                                                 if columns > 0 {
+                                                                     echo.to_string().repeat(columns - 1)
+                                                                 } else {
+                                                                     String::new()
+                                                                 }
+                                                             } else {
+                                                                 String::new()
+                                                             }
+                                                         } else {
+                                                             raw_line.clone()
+                                                         };
+                                                         redraw(writer, row, &updated_line)?;
+                                                         line = raw_line;
+                                                     }
+                                                     KeyCode::Char(key) => {
+                                                         // Handle Ctrl+c and Ctrl+d
+                                                         if (c == 'c'
+                                                             && event.modifiers.intersects(KeyModifiers::CONTROL))
+                                                             || (c == 'd'
+                                                                 && event
+                                                                     .modifiers
+                                                                     .intersects(KeyModifiers::CONTROL))
+                                                         {
+                                                             writer.execute(cursor::MoveToNextLine(1))?;
+                                                             break 'prompt;
+                                                         // Handle Ctrl+l to clear the screen
+                                                         } else if c == 'l'
+                                                             && event.modifiers.intersects(KeyModifiers::CONTROL)
+                                                         {
+                                                             writer.queue(Clear(ClearType::All))?;
+                                                             writer.queue(cursor::MoveTo(0, 0))?;
+                                                             write_bytes(writer, prompt.as_ref().as_bytes())?;
+                                                         // Handle Ctrl+a, go to line start
+                                                         } else if c == 'a'
+                                                             && event.modifiers.intersects(KeyModifiers::CONTROL)
+                                                         {
+                                                             writer.execute(cursor::MoveTo(prompt_cols, row))?;
+                                                         // Handle Ctrl+e, go to line end
+                                                         } else if c == 'e'
+                                                             && event.modifiers.intersects(KeyModifiers::CONTROL)
+                                                         {
+                                                             let end = end_col(prompt.as_ref(), &line)?;
+                                                             writer.execute(cursor::MoveTo(end, row))?;
+                                                         // Print the character
+                                                         } else {
+                                                             write_char(writer, c, &mut line)?;
+                                                         }
+                                                     }
+                                                     _ => {
+                                                         //println!("{:?}", event);
+                                                     }
+                                                 },
+                                                 Event::Mouse(_event) => {}
+                                                 Event::Resize(_width, _height) => {}
+                                                 */
         }
     }
 

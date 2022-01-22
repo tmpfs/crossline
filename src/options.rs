@@ -1,4 +1,5 @@
 //! Options for creating prompts.
+use crate::key_binding::KeyBindings;
 use std::borrow::Cow;
 
 #[cfg(feature = "history")]
@@ -10,6 +11,9 @@ use std::sync::Mutex;
 /// The options to use when creating a prompt.
 #[derive(Default)]
 pub struct PromptOptions {
+    /// Key bindings to use for the prompt.
+    pub(crate) bindings: KeyBindings,
+
     /// Options for requiring a value.
     pub(crate) required: Option<Required>,
 
@@ -37,6 +41,12 @@ impl PromptOptions {
     /// Create new prompt options.
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Configure key bindings.
+    pub fn bindings(mut self, bindings: KeyBindings) -> Self {
+        self.bindings = bindings;
+        self
     }
 
     /// Configure password for these options.
