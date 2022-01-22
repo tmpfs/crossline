@@ -14,13 +14,56 @@ use unicode_width::UnicodeWidthStr;
 /// The options to use when creating a prompt.
 #[derive(Default)]
 pub struct PromptOptions {
+    /// Options for requiring a value.
+    pub required: Option<Required>,
+
     /// Options for password capture.
     pub password: Option<PassWord>,
 
-    /// Capture multiline input.
+    /// Options for multiline input.
     ///
     /// Use Ctrl+c or Ctrl+d to exit the prompt.
     pub multiline: Option<MultiLine>,
+}
+
+impl PromptOptions {
+    /// Create the prompt options for a password.
+    pub fn new_password(password: PassWord) -> Self {
+        Self {
+            password: Some(password),
+            multiline: Default::default(),
+            required: Default::default(),
+        }
+    }
+
+    /// Create the prompt options for a multiline input.
+    pub fn new_multiline(multiline: MultiLine) -> Self {
+        Self {
+            password: Default::default(),
+            multiline: Some(multiline),
+            required: Default::default(),
+        }
+    }
+
+    /// Create the prompt options for a required value.
+    pub fn new_required(required: Required) -> Self {
+        Self {
+            password: Default::default(),
+            multiline: Default::default(),
+            required: Some(required),
+        }
+    }
+}
+
+/// The options for a required value.
+#[derive(Default)]
+pub struct Required {
+    /// Trim the value before checking it is empty.
+    pub trim: bool,
+    /// Maximum number of attempts before giving up.
+    ///
+    /// Zero indicates to keep repeating the prompt forever.
+    pub max_attempts: u16,
 }
 
 /// The options for password mode.
@@ -51,7 +94,27 @@ pub fn prompt<'a, S: AsRef<str>>(
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
-    let value = run(prompt.as_ref(), writer, options)?;
+    let value = if let Some(required) = &options.required {
+        let mut value;
+        let mut attempts = 0u16;
+        loop {
+            value = run(prompt.as_ref(), writer, options)?;
+            if required.trim {
+                value = value.trim().to_string();
+            }
+
+            attempts += 1;
+            if !value.is_empty()
+                || (required.max_attempts > 0
+                    && attempts >= required.max_attempts)
+            {
+                break;
+            }
+        }
+        value
+    } else {
+        run(prompt.as_ref(), writer, options)?
+    };
     Ok(value)
 }
 
