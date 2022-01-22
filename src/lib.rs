@@ -1,11 +1,14 @@
 #![deny(missing_docs)]
 #![feature(doc_cfg)]
+#![feature(thread_id_value)]
 
 //! Prompt library for crossterm.
 use anyhow::{bail, Result};
+use backtrace::Backtrace;
 use crossterm::{
     cursor,
     event::{read, Event},
+    execute,
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
 };
@@ -23,6 +26,47 @@ pub use options::*;
 #[doc(cfg(feature = "history"))]
 pub mod history;
 
+/// Type of stream.
+pub enum StreamType {
+    /// The Stdout stream.
+    Out,
+    /// The Stderr stream.
+    Err,
+}
+
+fn handle_panic_hook(info: &std::panic::PanicInfo) {
+    let _ = disable_raw_mode();
+    let thread = std::thread::current();
+    let thread_name = if let Some(name) = thread.name() {
+        name.to_string()
+    } else {
+        thread.id().as_u64().to_string()
+    };
+    eprintln!("thread '{}' {}", thread_name, info);
+    if let Ok(_) = std::env::var("RUST_BACKTRACE") {
+        let backtrace = Backtrace::new();
+        eprintln!("{:?}", backtrace);
+    } else {
+        eprintln!("note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace")
+    }
+}
+
+/// Set a panic hook writing terminal commands to stdout.
+pub fn stdout_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let _ = execute!(std::io::stdout(), cursor::MoveToNextLine(1));
+        handle_panic_hook(info);
+    }));
+}
+
+/// Set a panic hook writing terminal commands to stderr.
+pub fn stderr_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let _ = execute!(std::io::stderr(), cursor::MoveToNextLine(1));
+        handle_panic_hook(info);
+    }));
+}
+
 #[cfg(any(feature = "shell", doc))]
 #[doc(cfg(feature = "shell"))]
 /// Run an infinite shell prompt.
@@ -34,7 +78,7 @@ pub fn shell<'a, P, W, O, E, H>(
 ) -> Result<()>
 where
     P: Fn() -> &'a str,
-    W: Write,
+    W: Write + Send + Sync + 'a,
     O: Fn() -> &'a PromptOptions,
     E: Error + Send + Sync + 'static,
     H: Fn(String) -> std::result::Result<(), E>,
@@ -48,11 +92,14 @@ where
 }
 
 /// Show a prompt.
-pub fn prompt<'a, S: AsRef<str>>(
+pub fn prompt<'a, S: AsRef<str>, W>(
     prefix: S,
-    writer: &'a mut impl Write,
+    writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String> {
+) -> Result<String>
+where
+    W: Write + Send + Sync + 'a,
+{
     if prefix.as_ref().len() > u16::MAX as usize {
         bail!("prompt prefix is too long");
     }
@@ -92,18 +139,21 @@ pub fn parse<'a, T, W, S: AsRef<str>>(
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: Error + Sync + Send + 'static,
-    W: Write,
+    W: Write + Send + Sync + 'a,
 {
     let value: String = prompt(prefix.as_ref(), writer, options)?;
     let value: T = (&value[..]).parse::<T>()?;
     Ok(value)
 }
 
-fn validate<'a, S: AsRef<str>>(
+fn validate<'a, S: AsRef<str>, W>(
     prefix: S,
-    writer: &'a mut impl Write,
+    writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String> {
+) -> Result<String>
+where
+    W: Write + Send + Sync + 'a,
+{
     let mut value = if let Some(validation) = &options.validation {
         let value = run(prefix.as_ref(), writer, options)?;
         if (validation.validate)(&value) {
@@ -125,11 +175,14 @@ fn validate<'a, S: AsRef<str>>(
     Ok(value)
 }
 
-fn run<'a, S: AsRef<str>>(
+fn run<'a, S: AsRef<str>, W>(
     prefix: S,
-    writer: &'a mut impl Write,
+    writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String> {
+) -> Result<String>
+where
+    W: Write + Send + Sync + 'a,
+{
     enable_raw_mode()?;
 
     let _guard = scopeguard::guard((), |_| {
@@ -360,7 +413,7 @@ fn run<'a, S: AsRef<str>>(
     Ok(buffer)
 }
 
-// Redraw the prefix and value moving the cursor 
+// Redraw the prefix and value moving the cursor
 // to the given position.
 fn redraw<S: AsRef<str>>(
     prefix: S,
@@ -470,6 +523,5 @@ fn write_char<S: AsRef<str>>(
 
     // Store the updated line buffer
     *line = new_line;
-
     Ok(())
 }

@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use crossterm_prompt::{prompt, PromptOptions, Transformer};
 
 fn main() -> Result<()> {
+    crossterm_prompt::stdout_panic_hook();
+
     let mut stdout = std::io::stdout();
     let options = PromptOptions::new().transformer(Transformer {
         transform: Box::new(|s| Cow::Owned(s.trim().to_string())),

@@ -3,6 +3,8 @@ use anyhow::Result;
 use crossterm_prompt::{prompt, PromptOptions, Validation};
 
 fn main() -> Result<()> {
+    crossterm_prompt::stdout_panic_hook();
+
     let mut stdout = std::io::stdout();
     let options = PromptOptions::new().validation(Validation {
         validate: Box::new(|s| {

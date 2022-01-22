@@ -6,6 +6,8 @@ use std::sync::Mutex;
 enum Error {}
 
 fn main() -> Result<()> {
+    crossterm_prompt::stdout_panic_hook();
+
     let mut stdout = std::io::stdout();
     let history = Box::new(Mutex::new(MemoryHistory::new(Default::default())));
     let options = PromptOptions::new().history(history);
