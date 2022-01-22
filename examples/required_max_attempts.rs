@@ -4,7 +4,7 @@ use crossterm_prompt::{prompt, PromptOptions, Required};
 
 fn main() -> Result<()> {
     let mut stdout = std::io::stdout();
-    let options = PromptOptions::new_required(Required {
+    let options = PromptOptions::new().required(Required {
         max_attempts: 3,
         trim: true,
     });

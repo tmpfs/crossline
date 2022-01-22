@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![feature(doc_cfg)]
 
 //! Prompt library for crossterm.
 use anyhow::Result;
@@ -16,8 +17,33 @@ use unicode_width::UnicodeWidthStr;
 mod options;
 pub use options::*;
 
-#[cfg(feature = "shell")]
-mod shell;
+#[cfg(any(feature = "history", doc))]
+#[doc(cfg(feature = "history"))]
+pub mod history;
+
+#[cfg(any(feature = "shell", doc))]
+#[doc(cfg(feature = "shell"))]
+/// Run an infinite shell prompt.
+pub fn shell<'a, P, W, O, E, H>(
+    prefix: P,
+    writer: &'a mut W,
+    options: O,
+    handler: H,
+) -> Result<()>
+where
+    P: Fn() -> &'a str,
+    W: Write,
+    O: Fn() -> &'a PromptOptions,
+    E: Error + Send + Sync + 'static,
+    H: Fn(String) -> std::result::Result<(), E>,
+{
+    loop {
+        let prompt_prefix = (prefix)();
+        let opts = (options)();
+        let value = prompt(prompt_prefix, writer, opts)?;
+        (handler)(value)?;
+    }
+}
 
 /// Show a prompt.
 pub fn prompt<'a, S: AsRef<str>>(
@@ -25,7 +51,7 @@ pub fn prompt<'a, S: AsRef<str>>(
     writer: &'a mut impl Write,
     options: &PromptOptions,
 ) -> Result<String> {
-    if let Some(required) = &options.required {
+    let value = if let Some(required) = &options.required {
         let mut value;
         let mut attempts = 0u16;
         loop {
@@ -43,10 +69,18 @@ pub fn prompt<'a, S: AsRef<str>>(
                 break;
             }
         }
-        Ok(value)
+        value
     } else {
-        validate(prefix.as_ref(), writer, options)
+        validate(prefix.as_ref(), writer, options)?
+    };
+
+    #[cfg(feature = "history")]
+    if let Some(history) = &options.history {
+        let mut writer = history.lock().unwrap();
+        writer.push(value.clone());
     }
+
+    Ok(value)
 }
 
 /// Show a prompt and parse the value to another type.
@@ -122,7 +156,10 @@ fn run<'a, S: AsRef<str>>(
     };
 
     // Redraw the current line
-    let redraw = |writer: &mut dyn Write, line: &str| -> Result<()> {
+    let redraw = |writer: &mut dyn Write, row: u16,line: &str| -> Result<()> {
+        writer.queue(cursor::MoveTo(0, row))?;
+        writer.queue(Clear(ClearType::CurrentLine))?;
+
         let mut tmp = prompt.as_ref().to_string();
         tmp.push_str(line);
         writer.write(tmp.as_bytes())?;
@@ -165,6 +202,30 @@ fn run<'a, S: AsRef<str>>(
                         break 'prompt;
                     }
                 }
+                KeyCode::Up =>
+                {
+                    #[cfg(feature = "history")]
+                    if let Some(history) = &options.history {
+                        if let Some(history_line) =
+                            history.lock().unwrap().previous()
+                        {
+                            redraw(writer, row, history_line)?;
+                        }
+                    }
+                }
+                KeyCode::Down =>
+                {
+                    #[cfg(feature = "history")]
+                    if let Some(history) = &options.history {
+                        if let Some(history_line) =
+                            history.lock().unwrap().next()
+                        {
+                            redraw(writer, row, history_line)?;
+                        } else {
+                            redraw(writer, row, &line)?;
+                        }
+                    }
+                }
                 KeyCode::Left => {
                     if column > prompt_cols {
                         writer.execute(cursor::MoveTo(column - 1, row))?;
@@ -177,9 +238,6 @@ fn run<'a, S: AsRef<str>>(
                     }
                 }
                 KeyCode::Backspace => {
-                    writer.queue(cursor::MoveTo(0, row))?;
-                    writer.queue(Clear(ClearType::CurrentLine))?;
-
                     let mut chars = line.chars();
                     chars.next_back();
                     let raw_line = chars.as_str().to_string();
@@ -199,7 +257,7 @@ fn run<'a, S: AsRef<str>>(
                     } else {
                         raw_line.clone()
                     };
-                    redraw(writer, &updated_line)?;
+                    redraw(writer, row, &updated_line)?;
                     line = raw_line;
                 }
                 KeyCode::Char(c) => {

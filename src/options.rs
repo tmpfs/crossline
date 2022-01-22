@@ -1,81 +1,79 @@
 //! Options for creating prompts.
 use std::borrow::Cow;
 
+#[cfg(feature = "history")]
+use crate::history::History;
+
+#[cfg(feature = "history")]
+use std::sync::Mutex;
+
 /// The options to use when creating a prompt.
 #[derive(Default)]
 pub struct PromptOptions {
     /// Options for requiring a value.
-    pub required: Option<Required>,
+    pub(crate) required: Option<Required>,
 
     /// Options for password capture.
-    pub password: Option<PassWord>,
+    pub(crate) password: Option<PassWord>,
 
     /// Options for multiline input.
     ///
     /// Use Ctrl+c or Ctrl+d to exit the prompt.
-    pub multiline: Option<MultiLine>,
+    pub(crate) multiline: Option<MultiLine>,
 
     /// Options for validating the input.
-    pub validation: Option<Validation>,
+    pub(crate) validation: Option<Validation>,
 
     /// Options for transforming the value.
-    pub transformer: Option<Transformer>,
+    pub(crate) transformer: Option<Transformer>,
+
+    /// History implementation.
+    #[cfg(any(feature = "history", doc))]
+    #[doc(cfg(feature = "history"))]
+    pub(crate) history: Option<Box<Mutex<dyn History>>>,
 }
 
 impl PromptOptions {
-    /// Create the prompt options for a password.
-    pub fn new_password(password: PassWord) -> Self {
-        Self {
-            password: Some(password),
-            multiline: Default::default(),
-            required: Default::default(),
-            validation: Default::default(),
-            transformer: Default::default(),
-        }
+    /// Create new prompt options.
+    pub fn new() -> Self {
+        Default::default()
     }
 
-    /// Create the prompt options for a multiline input.
-    pub fn new_multiline(multiline: MultiLine) -> Self {
-        Self {
-            password: Default::default(),
-            multiline: Some(multiline),
-            required: Default::default(),
-            validation: Default::default(),
-            transformer: Default::default(),
-        }
+    /// Configure password for these options.
+    pub fn password(mut self, password: PassWord) -> Self {
+        self.password = Some(password);
+        self
     }
 
-    /// Create the prompt options for a required value.
-    pub fn new_required(required: Required) -> Self {
-        Self {
-            password: Default::default(),
-            multiline: Default::default(),
-            required: Some(required),
-            validation: Default::default(),
-            transformer: Default::default(),
-        }
+    /// Configure for multiline input.
+    pub fn multiline(mut self, multiline: MultiLine) -> Self {
+        self.multiline = Some(multiline);
+        self
     }
 
-    /// Create the prompt options for a validation.
-    pub fn new_validation(validation: Validation) -> Self {
-        Self {
-            password: Default::default(),
-            multiline: Default::default(),
-            required: Default::default(),
-            validation: Some(validation),
-            transformer: Default::default(),
-        }
+    /// Configure for a required value.
+    pub fn required(mut self, required: Required) -> Self {
+        self.required = Some(required);
+        self
     }
 
-    /// Create the prompt options for a transformer.
-    pub fn new_transformer(transformer: Transformer) -> Self {
-        Self {
-            password: Default::default(),
-            multiline: Default::default(),
-            required: Default::default(),
-            validation: Default::default(),
-            transformer: Some(transformer),
-        }
+    /// Configure for validation.
+    pub fn validation(mut self, validation: Validation) -> Self {
+        self.validation = Some(validation);
+        self
+    }
+
+    /// Configure with a transformer.
+    pub fn transformer(mut self, transformer: Transformer) -> Self {
+        self.transformer = Some(transformer);
+        self
+    }
+
+    #[cfg(feature = "history")]
+    /// Configure with a history.
+    pub fn history(mut self, history: Box<Mutex<dyn History>>) -> Self {
+        self.history = Some(history);
+        self
     }
 }
 

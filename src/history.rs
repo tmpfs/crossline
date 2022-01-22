@@ -1,3 +1,5 @@
+//! Support for shell history.
+
 /// Options for history implementations.
 pub struct HistoryOptions {
     /// Maximum number of history items.
