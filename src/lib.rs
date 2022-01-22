@@ -136,56 +136,8 @@ fn run<'a, S: AsRef<str>>(
     let prompt_cols: u16 =
         UnicodeWidthStr::width(prompt.as_ref()).try_into()?;
 
-    // Write bytes to the sink
-    let write_bytes = |writer: &mut dyn Write, bytes: &[u8]| -> Result<()> {
-        writer.write(bytes)?;
-        writer.flush()?;
-        Ok(())
-    };
-
     // Write the initial prompt
     write_bytes(writer, prompt.as_ref().as_bytes())?;
-
-    // Compute the last column
-    let end_col = |prompt: &str, line: &str| -> Result<u16> {
-        let mut all = prompt.to_string();
-        all.push_str(line);
-        let cols: u16 = UnicodeWidthStr::width(&all[..]).try_into()?;
-        Ok(cols)
-    };
-
-    // Calculate the end position for a value.
-    let end_pos = |position: (u16, u16),
-                   size: (u16, u16),
-                   prompt_cols: u16,
-                   value: &str|
-     -> (u16, u16) {
-        let (_col, row) = position;
-        let (w, _h) = size;
-        let remainder = w - prompt_cols;
-        // Fits without wrapping
-        if value.len() < remainder as usize {
-            let len: u16 = value.len().try_into().unwrap();
-            let new_col = prompt_cols + len;
-            (new_col, row)
-        } else {
-            todo!("calculate with long wrapped value");
-        }
-    };
-
-    let write_char =
-        |writer: &mut dyn Write, c: char, line: &mut String| -> Result<()> {
-            line.push(c);
-            if let Some(password) = &options.password {
-                if let Some(echo) = &password.echo {
-                    write!(writer, "{}", echo)?;
-                }
-            } else {
-                write!(writer, "{}", c)?;
-            }
-            writer.flush()?;
-            Ok(())
-        };
 
     'prompt: loop {
         let (width, height) = size()?;
@@ -196,7 +148,15 @@ fn run<'a, S: AsRef<str>>(
                     for action in actions {
                         match action {
                             KeyAction::WriteChar(c) => {
-                                write_char(writer, c, &mut line)?;
+                                write_char(
+                                    prompt.as_ref(),
+                                    options,
+                                    writer,
+                                    prompt_cols,
+                                    (column, row),
+                                    &mut line,
+                                    c,
+                                )?;
                             }
                             KeyAction::SubmitLine => {
                                 if let Some(multiline) = &options.multiline {
@@ -236,8 +196,14 @@ fn run<'a, S: AsRef<str>>(
                                 }
                             }
                             KeyAction::MoveCursorRight => {
-                                let end = end_col(prompt.as_ref(), &line)?;
-                                if column < end {
+                                let position = end_pos(
+                                    (column, row),
+                                    (width, height),
+                                    prompt_cols,
+                                    &line,
+                                );
+
+                                if column < position.0 {
                                     writer.execute(cursor::MoveTo(
                                         column + 1,
                                         row,
@@ -301,8 +267,14 @@ fn run<'a, S: AsRef<str>>(
                                 ))?;
                             }
                             KeyAction::MoveToLineEnd => {
-                                let end = end_col(prompt.as_ref(), &line)?;
-                                writer.execute(cursor::MoveTo(end, row))?;
+                                let position = end_pos(
+                                    (column, row),
+                                    (width, height),
+                                    prompt_cols,
+                                    &line,
+                                );
+                                writer
+                                    .execute(cursor::MoveTo(position.0, row))?;
                             }
                             KeyAction::HistoryPrevious => {
                                 #[cfg(feature = "history")]
@@ -395,5 +367,111 @@ fn redraw<S: AsRef<str>>(
     writer.write(line.as_bytes())?;
     writer.queue(cursor::MoveTo(col, row))?;
     writer.flush()?;
+    Ok(())
+}
+
+// Calculate the end position for a value.
+fn end_pos(
+    position: (u16, u16),
+    size: (u16, u16),
+    prompt_cols: u16,
+    value: &str,
+) -> (u16, u16) {
+    let (_col, row) = position;
+    let (w, _h) = size;
+    let remainder = w - prompt_cols;
+    // Fits without wrapping
+    if value.len() < remainder as usize {
+        //let len: u16 = value.len().try_into().unwrap();
+        let len: u16 = UnicodeWidthStr::width(&value[..]).try_into().unwrap();
+        let new_col = prompt_cols + len;
+        (new_col, row)
+    } else {
+        todo!("calculate with long wrapped value");
+    }
+}
+
+/*
+// Compute the last column
+let end_col = |prompt: &str, line: &str| -> Result<u16> {
+    let mut all = prompt.to_string();
+    all.push_str(line);
+    let cols: u16 = UnicodeWidthStr::width(&all[..]).try_into()?;
+    Ok(cols)
+};
+*/
+
+// Write bytes to the sink and flush the output.
+fn write_bytes(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
+    writer.write(bytes)?;
+    writer.flush()?;
+    Ok(())
+}
+
+// Write a character to the line.
+fn write_char<S: AsRef<str>>(
+    prefix: S,
+    options: &PromptOptions,
+    writer: &mut dyn Write,
+    prompt_cols: u16,
+    position: (u16, u16),
+    line: &mut String,
+    c: char,
+) -> Result<()> {
+    let (col, row) = position;
+    let pos = col - prompt_cols;
+    let char_str = c.to_string();
+
+    // Appending to the end
+    let (before, after) = if pos as usize == line.len() {
+        (&line[..], "")
+    } else {
+        if pos > 0 {
+            let before = &line[0..pos as usize];
+            let after = &line[pos as usize..];
+            (before, after)
+        } else {
+            ("", "")
+        }
+    };
+
+    // Prepare new line buffer
+    let mut new_line = String::new();
+    new_line.push_str(before);
+    new_line.push_str(&char_str[..]);
+    new_line.push_str(after);
+
+    let (before, char_str, after) = if let Some(password) = &options.password {
+        if let Some(echo) = &password.echo {
+            let before_len = UnicodeWidthStr::width(before);
+            let char_len = UnicodeWidthStr::width(&char_str[..]);
+            let after_len = UnicodeWidthStr::width(after);
+            let echo_str = echo.to_string();
+            (
+                echo_str.repeat(before_len),
+                echo_str.repeat(char_len),
+                echo_str.repeat(after_len),
+            )
+        } else {
+            // Password enabled but not echoing
+            ("".to_string(), "".to_string(), "".to_string())
+        }
+    } else {
+        (before.to_string(), char_str, after.to_string())
+    };
+
+    // Write out the line data
+    writer.queue(cursor::MoveTo(0, row))?;
+    writer.queue(Clear(ClearType::CurrentLine))?;
+    writer.write(prefix.as_ref().as_bytes())?;
+    writer.write(before.as_bytes())?;
+    writer.write(char_str.as_bytes())?;
+    writer.write(after.as_bytes())?;
+    writer.queue(cursor::MoveTo(prompt_cols + pos + 1, row))?;
+    writer.flush()?;
+
+    // Store the updated line buffer
+    *line = new_line;
+
     Ok(())
 }
