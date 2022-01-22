@@ -34,7 +34,7 @@ pub enum KeyAction {
     /// Move cursor right.
     MoveCursorRight,
     /// Erase the last character.
-    EraseLastCharacter,
+    EraseCharacter,
     /// Clear the screen.
     ClearScreen,
     /// Abort the prompt.
@@ -59,11 +59,19 @@ pub struct KeyBindings {
 impl KeyBindings {
     /// Find the actions for the first key definition
     /// that matches the give key event.
-    pub fn first(
-        &self,
-        kind: KeyType,
-        event: &KeyEvent,
-    ) -> Option<Vec<KeyAction>> {
+    pub fn first(&self, event: &KeyEvent) -> Option<Vec<KeyAction>> {
+        let kind = match event.code {
+            KeyCode::Char(_) => {
+                if let KeyModifiers::NONE = event.modifiers {
+                    KeyType::Char
+                } else {
+                    KeyType::Named
+                }
+            }
+            KeyCode::F(_) => KeyType::Func,
+            _ => KeyType::Named,
+        };
+
         self.bindings.iter().find_map(|d| {
             if d.kind == kind {
                 match kind {
@@ -133,7 +141,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Backspace,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![KeyAction::EraseLastCharacter]),
+                actions: Box::new(|_| vec![KeyAction::EraseCharacter]),
             },
             // Up
             KeyDefinition {

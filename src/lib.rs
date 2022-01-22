@@ -5,7 +5,7 @@
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{read, Event, KeyCode},
+    event::{read, Event},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
 };
@@ -184,13 +184,7 @@ fn run<'a, S: AsRef<str>>(
         let (column, row) = cursor::position()?;
         match read()? {
             Event::Key(event) => {
-                let kind = match event.code {
-                    KeyCode::Char(_) => KeyType::Char,
-                    KeyCode::F(_) => KeyType::Func,
-                    _ => KeyType::Named,
-                };
-
-                if let Some(actions) = options.bindings.first(kind, &event) {
+                if let Some(actions) = options.bindings.first(&event) {
                     for action in actions {
                         match action {
                             KeyAction::WriteChar(c) => {
@@ -243,7 +237,7 @@ fn run<'a, S: AsRef<str>>(
                                     ))?;
                                 }
                             }
-                            KeyAction::EraseLastCharacter => {
+                            KeyAction::EraseCharacter => {
                                 let mut chars = line.chars();
                                 chars.next_back();
                                 let raw_line = chars.as_str().to_string();
