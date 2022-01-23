@@ -10,6 +10,7 @@ anyhow = "1"
 unicode-width = "0.1"
 backtrace = "0.3"
 scopeguard = "1.1"
+unicode-segmentation = "1.8"
 
 [features]
 default = ["panic"]

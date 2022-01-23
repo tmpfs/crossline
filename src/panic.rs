@@ -1,21 +1,17 @@
 //! Helper functions for gracefully handling panics.
 //!
-//! Because we enter terminal raw mode when showing a prompt 
-//! we need to disable raw mode before exiting the program otherwise 
+//! Because we enter terminal raw mode when showing a prompt
+//! we need to disable raw mode before exiting the program otherwise
 //! the TTY behavior may be incorrect.
 //!
-//! We do not know which stream you are writing to so call the appropriate 
-//! function before initializing any prompts to disable raw mode 
+//! We do not know which stream you are writing to so call the appropriate
+//! function before initializing any prompts to disable raw mode
 //! when a panic happens.
 //!
 use backtrace::Backtrace;
 use std::panic::PanicInfo;
 
-use crossterm::{
-    cursor,
-    execute,
-    terminal::{disable_raw_mode},
-};
+use crossterm::{cursor, execute, terminal::disable_raw_mode};
 
 fn handle_panic_hook(info: &PanicInfo) {
     let _ = disable_raw_mode();
@@ -53,4 +49,3 @@ pub fn stderr_panic_hook() {
         handle_panic_hook(info);
     }));
 }
-

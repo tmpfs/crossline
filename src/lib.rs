@@ -22,13 +22,13 @@ mod options;
 mod panic;
 
 #[cfg(feature = "panic")]
-pub use panic::{stdout_panic_hook, stderr_panic_hook};
+pub use panic::{stderr_panic_hook, stdout_panic_hook};
 
-mod string_buffer;
+mod terminal_buffer;
 
 pub use key_binding::*;
 pub use options::*;
-use string_buffer::StringBuffer;
+use terminal_buffer::TerminalBuffer;
 
 #[cfg(any(feature = "history", doc))]
 #[doc(cfg(feature = "history"))]
@@ -161,25 +161,20 @@ where
     } else {
         None
     };
-    let mut str_buf = StringBuffer::new(prefix.as_ref(), echo);
-
-    //let mut buffer = String::new();
+    let mut buf = TerminalBuffer::new(prefix.as_ref(), echo);
 
     #[cfg(feature = "history")]
     let mut history_buffer = String::new();
 
-    //let prompt_cols: u16 =
-    //UnicodeWidthStr::width(prefix.as_ref()).try_into()?;
-
-    // Write the initial prompt
-    str_buf.write_bytes(writer, prefix.as_ref().as_bytes())?;
+    // Write the initial prefix
+    buf.write_prefix(writer)?;
 
     'prompt: loop {
         let (width, height) = size()?;
         let (column, row) = cursor::position()?;
 
-        str_buf.set_size((width, height));
-        str_buf.set_position((column, row));
+        buf.set_size((width, height));
+        buf.set_position((column, row));
 
         match read()? {
             Event::Key(event) => {
@@ -187,28 +182,15 @@ where
                     for action in actions {
                         match action {
                             KeyAction::WriteChar(c) => {
-                                str_buf.write_char(writer, c)?;
-                                //write_char(
-                                //prefix.as_ref(),
-                                //options,
-                                //writer,
-                                //prompt_cols,
-                                //(column, row),
-                                //&mut buffer,
-                                //c,
-                                //)?;
+                                buf.write_char(writer, c)?;
                             }
                             KeyAction::SubmitLine => {
                                 if let Some(multiline) = &options.multiline {
-                                    str_buf.buffer_mut().push('\n');
-                                    write!(writer, "{}", '\n')?;
+                                    buf.push(writer, '\n')?;
                                     writer
                                         .execute(cursor::MoveTo(0, row + 1))?;
                                     if multiline.repeat_prompt {
-                                        str_buf.write_bytes(
-                                            writer,
-                                            prefix.as_ref().as_bytes(),
-                                        )?;
+                                        buf.write_prefix(writer)?;
                                     } else {
                                         writer.execute(Clear(
                                             ClearType::CurrentLine,
@@ -219,8 +201,7 @@ where
                                     if let Some(history) = &options.history {
                                         let mut writer =
                                             history.lock().unwrap();
-                                        writer
-                                            .push(str_buf.buffer().to_string());
+                                        writer.push(buf.buffer().to_string());
                                     }
 
                                     writer
@@ -229,7 +210,7 @@ where
                                 }
                             }
                             KeyAction::MoveCursorLeft => {
-                                if column as usize > str_buf.prefix_columns() {
+                                if column as usize > buf.prefix_columns() {
                                     writer.execute(cursor::MoveTo(
                                         column - 1,
                                         row,
@@ -237,8 +218,7 @@ where
                                 }
                             }
                             KeyAction::MoveCursorRight => {
-                                let position =
-                                    str_buf.end_pos(str_buf.buffer());
+                                let position = buf.end_pos(buf.buffer());
 
                                 if column < position.0 {
                                     writer.execute(cursor::MoveTo(
@@ -248,49 +228,7 @@ where
                                 }
                             }
                             KeyAction::EraseCharacter => {
-                                let pos =
-                                    column as usize - str_buf.prefix_columns();
-                                let (raw_buffer, new_col) = if pos > 0 {
-                                    let before =
-                                        &str_buf.buffer()[0..pos as usize - 1];
-                                    let after =
-                                        &str_buf.buffer()[pos as usize..];
-                                    let mut s = String::new();
-                                    s.push_str(before);
-                                    s.push_str(after);
-                                    (s, (str_buf.prefix_columns() + pos) - 1)
-                                } else {
-                                    (
-                                        str_buf.buffer().to_string(),
-                                        column as usize,
-                                    )
-                                };
-
-                                /*
-                                let updated_line = if let Some(password) =
-                                    &options.password
-                                {
-                                    if let Some(echo) = &password.echo {
-                                        let columns =
-                                            UnicodeWidthStr::width(&buffer[..]);
-                                        if columns > 0 {
-                                            echo.to_string().repeat(columns - 1)
-                                        } else {
-                                            String::new()
-                                        }
-                                    } else {
-                                        String::new()
-                                    }
-                                } else {
-                                    raw_buffer.clone()
-                                };
-                                */
-
-                                str_buf.refresh(
-                                    writer,
-                                    raw_buffer,
-                                    (new_col.try_into()?, row),
-                                )?;
+                                buf.erase_before(writer, 1)?;
                             }
                             KeyAction::AbortPrompt => {
                                 writer.execute(cursor::MoveToNextLine(1))?;
@@ -299,25 +237,35 @@ where
                             KeyAction::ClearScreen => {
                                 writer.queue(Clear(ClearType::All))?;
                                 writer.queue(cursor::MoveTo(0, 0))?;
-                                str_buf.write_bytes(
-                                    writer,
-                                    prefix.as_ref().as_bytes(),
-                                )?;
+                                buf.write_prefix(writer)?;
                             }
                             KeyAction::MoveToLineBegin => {
                                 writer.execute(cursor::MoveTo(
-                                    str_buf.prefix_columns().try_into()?,
+                                    buf.prefix_columns().try_into()?,
                                     row,
                                 ))?;
                             }
                             KeyAction::MoveToLineEnd => {
-                                let position =
-                                    str_buf.end_pos(str_buf.buffer());
+                                let position = buf.end_pos(buf.buffer());
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
+                            KeyAction::EraseToLineBegin => {
+                                if (column as usize) > buf.prefix_columns() {
+                                    let amount =
+                                        column as usize - buf.prefix_columns();
+                                    buf.erase_before(writer, amount as usize)?;
+                                }
+                            }
+                            KeyAction::EraseToLineEnd => {
+                                if (column as usize) < buf.columns() {
+                                    let amount =
+                                        buf.columns() - (column as usize);
+                                    buf.erase_after(writer, amount as usize)?;
+                                }
+                            }
                             KeyAction::ErasePreviousWord => {
-                                todo!("erase previous word")
+                                buf.erase_word_before(writer)?;
                             }
                             #[cfg(feature = "history")]
                             KeyAction::HistoryPrevious => {
@@ -326,16 +274,16 @@ where
 
                                     if history.is_last() {
                                         history_buffer =
-                                            str_buf.buffer().to_string();
+                                            buf.buffer().to_string();
                                     }
 
                                     if let Some(history_line) =
                                         history.previous()
                                     {
                                         let position =
-                                            str_buf.end_pos(&history_line);
+                                            buf.end_pos(&history_line);
 
-                                        str_buf.refresh(
+                                        buf.refresh(
                                             writer,
                                             history_line,
                                             position,
@@ -349,17 +297,17 @@ where
                                     let mut history = history.lock().unwrap();
                                     if let Some(history_line) = history.next() {
                                         let position =
-                                            str_buf.end_pos(&history_line);
-                                        str_buf.refresh(
+                                            buf.end_pos(&history_line);
+                                        buf.refresh(
                                             writer,
                                             history_line,
                                             position,
                                         )?;
                                     } else {
                                         let position =
-                                            str_buf.end_pos(&history_buffer);
+                                            buf.end_pos(&history_buffer);
 
-                                        str_buf.refresh(
+                                        buf.refresh(
                                             writer,
                                             &history_buffer,
                                             position,
@@ -376,125 +324,5 @@ where
         }
     }
 
-    Ok(str_buf.into())
+    Ok(buf.into())
 }
-
-/*
-// Redraw the prefix and value moving the cursor
-// to the given position.
-fn redraw<S: AsRef<str>, W>(
-    prefix: S,
-    writer: &mut W,
-    position: (u16, u16),
-    value: &str,
-) -> Result<()>
-where
-    W: Write,
-{
-    let (col, row) = position;
-    writer.queue(cursor::MoveTo(0, row))?;
-    writer.queue(Clear(ClearType::CurrentLine))?;
-    writer.write(prefix.as_ref().as_bytes())?;
-    writer.write(value.as_bytes())?;
-    writer.queue(cursor::MoveTo(col, row))?;
-    writer.flush()?;
-    Ok(())
-}
-
-// Calculate the end position for a value.
-fn end_pos(
-    position: (u16, u16),
-    size: (u16, u16),
-    prompt_cols: u16,
-    value: &str,
-) -> (u16, u16) {
-    let (_col, row) = position;
-    let (w, _h) = size;
-    let remainder = w - prompt_cols;
-    // Fits without wrapping
-    if value.len() < remainder as usize {
-        let len: u16 = UnicodeWidthStr::width(value).try_into().unwrap();
-        let new_col = prompt_cols + len;
-        (new_col, row)
-    } else {
-        todo!("calculate with long wrapped value");
-    }
-}
-
-// Write bytes to the sink and flush the output.
-fn write_bytes(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
-    writer.write(bytes)?;
-    writer.flush()?;
-    Ok(())
-}
-
-// Write a character to the line.
-fn write_char<S: AsRef<str>, W>(
-    prefix: S,
-    options: &PromptOptions,
-    writer: &mut W,
-    prompt_cols: u16,
-    position: (u16, u16),
-    line: &mut String,
-    c: char,
-) -> Result<()>
-where
-    W: Write,
-{
-    let (col, row) = position;
-    let pos = col - prompt_cols;
-    let char_str = c.to_string();
-
-    // Appending to the end
-    let (before, after) = if pos as usize == line.len() {
-        (&line[..], "")
-    } else {
-        if pos > 0 {
-            let before = &line[0..pos as usize];
-            let after = &line[pos as usize..];
-            (before, after)
-        } else {
-            ("", "")
-        }
-    };
-
-    // Prepare new line buffer
-    let mut new_line = String::new();
-    new_line.push_str(before);
-    new_line.push_str(&char_str[..]);
-    new_line.push_str(after);
-
-    let (before, char_str, after) = if let Some(password) = &options.password {
-        if let Some(echo) = &password.echo {
-            let before_len = UnicodeWidthStr::width(before);
-            let char_len = UnicodeWidthStr::width(&char_str[..]);
-            let after_len = UnicodeWidthStr::width(after);
-            let echo_str = echo.to_string();
-            (
-                echo_str.repeat(before_len),
-                echo_str.repeat(char_len),
-                echo_str.repeat(after_len),
-            )
-        } else {
-            // Password enabled but not echoing
-            (String::new(), String::new(), String::new())
-        }
-    } else {
-        (before.to_string(), char_str, after.to_string())
-    };
-
-    // Write out the line data
-    writer.queue(cursor::MoveTo(0, row))?;
-    writer.queue(Clear(ClearType::CurrentLine))?;
-    writer.write(prefix.as_ref().as_bytes())?;
-    writer.write(before.as_bytes())?;
-    writer.write(char_str.as_bytes())?;
-    writer.write(after.as_bytes())?;
-    writer.queue(cursor::MoveTo(prompt_cols + pos + 1, row))?;
-    writer.flush()?;
-
-    // Store the updated line buffer
-    *line = new_line;
-    Ok(())
-}
-*/

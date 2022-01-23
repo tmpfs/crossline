@@ -87,6 +87,7 @@ dependencies = [
  "crossterm",
  "scopeguard",
  "thiserror",
+ "unicode-segmentation",
  "unicode-width",
 ]
 
@@ -324,6 +325,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8895849a949e7845e06bd6dc1aa51731a103c42707010a5b591c0038fb73385b"
 
 [[package]]
 name = "unicode-width"
