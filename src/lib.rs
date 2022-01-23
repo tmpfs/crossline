@@ -258,16 +258,14 @@ where
                                 }
                             }
                             KeyAction::EraseToLineEnd => {
-                                panic!("erase to line end");
                                 if (column as usize) < buf.columns() {
                                     let amount =
                                         buf.columns() - (column as usize);
-                                    panic!("erase to line end {}", amount);
                                     buf.erase_after(writer, amount as usize)?;
                                 }
                             }
                             KeyAction::ErasePreviousWord => {
-                                todo!("erase previous word")
+                                buf.erase_word_before(writer)?;
                             }
                             #[cfg(feature = "history")]
                             KeyAction::HistoryPrevious => {

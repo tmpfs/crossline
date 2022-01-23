@@ -101,6 +101,29 @@ impl<'a> TerminalBuffer<'a> {
             .collect::<Vec<&str>>()
     }
 
+    /// Erase the word before the cursor.
+    pub fn erase_word_before<W>(&mut self, writer: &mut W) -> Result<()>
+    where
+        W: Write,
+    {
+        if !self.buffer.is_empty() {
+            let (column, row) = self.position;
+            let after_start = column as usize - self.prefix_cols;
+            let before = &self.buffer[0..after_start];
+            let after = &self.buffer[after_start..];
+            let mut words = (before.trim_end()).split_word_bounds();
+            words.next_back();
+            let mut buffer = words.collect::<Vec<&str>>().join("");
+            let new_col: u16 = (self.prefix_cols
+                + UnicodeWidthStr::width(&buffer[..]))
+            .try_into()?;
+            buffer.push_str(after);
+            let position = (new_col, row);
+            self.refresh(writer, buffer, position)?;
+        }
+        Ok(())
+    }
+
     /// Erase a number of columns before the cursor.
     pub fn erase_before<W>(
         &mut self,
