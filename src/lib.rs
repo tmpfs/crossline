@@ -204,8 +204,16 @@ where
                                         writer.push(buf.buffer().to_string());
                                     }
 
-                                    writer
-                                        .execute(cursor::MoveToNextLine(1))?;
+                                    if row == height - 1 {
+                                        write!(writer, "{}", '\n')?;
+                                        writer
+                                            .execute(cursor::MoveTo(0, row))?;
+                                    } else {
+                                        writer.execute(
+                                            cursor::MoveToNextLine(1),
+                                        )?;
+                                    }
+
                                     break 'prompt;
                                 }
                             }
