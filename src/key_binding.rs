@@ -44,6 +44,9 @@ pub enum KeyAction {
     /// Move to end of the line.
     MoveToLineEnd,
 
+    /// Erase the previous word.
+    ErasePreviousWord,
+
     /// Go to previous history item.
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]
@@ -213,6 +216,15 @@ impl Default for KeyBindings {
                     modifiers: KeyModifiers::CONTROL,
                 }),
                 actions: Box::new(|_| vec![KeyAction::MoveToLineEnd]),
+            },
+            // Ctrl+w
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('w'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![KeyAction::ErasePreviousWord]),
             },
         ];
         Self { bindings }

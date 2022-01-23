@@ -59,6 +59,42 @@ pub fn stderr_panic_hook() {
     }));
 }
 
+/// Internal buffer for a string that operates on columns 
+/// and rows and may include a prefix to the buffer value.
+struct StringBuffer<'a> {
+    prefix: &'a str,
+    buffer: String,
+    prefix_cols: usize,
+    buffer_cols: usize,
+    echo: Option<char>,
+}
+
+impl<'a> StringBuffer<'a> {
+    fn new(prefix: &'a str) -> Self {
+        let prefix_cols: usize = UnicodeWidthStr::width(prefix);
+        Self {
+            prefix,
+            prefix_cols,
+            buffer: String::new(),
+            buffer_cols: 0,
+            echo: None,
+        }
+    }
+
+    // Update the buffer to a new value.
+    fn update(&mut self, value: String) {
+        self.buffer_cols = UnicodeWidthStr::width(&value[..]);
+        self.buffer = value;
+    }
+
+    /*
+    /// Get a visible representation of the buffer.
+    fn visible() -> String {
+
+    }
+    */
+}
+
 #[cfg(any(feature = "shell", doc))]
 #[doc(cfg(feature = "shell"))]
 /// Run an infinite shell prompt.
@@ -180,6 +216,8 @@ where
     let _guard = scopeguard::guard((), |_| {
         let _ = disable_raw_mode();
     });
+
+    let mut str_buf = StringBuffer::new(prefix.as_ref());
 
     let mut buffer = String::new();
 
@@ -329,6 +367,9 @@ where
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
+                            KeyAction::ErasePreviousWord => {
+                                todo!("erase previous word")
+                            }
                             #[cfg(feature = "history")]
                             KeyAction::HistoryPrevious => {
                                 if let Some(history) = &options.history {
@@ -420,6 +461,77 @@ fn redraw<S: AsRef<str>, W>(
     writer.write(value.as_bytes())?;
     writer.queue(cursor::MoveTo(col, row))?;
     writer.flush()?;
+    Ok(())
+}
+
+enum Direction {
+    /// Before the cursor.
+    Before,
+    /// After the cursor.
+    After,
+}
+
+fn erase<'a, S: AsRef<str>, W>(
+    prefix: S,
+    writer: &'a mut W,
+    options: &PromptOptions,
+    buffer: &mut String,
+    position: (u16, u16),
+    prompt_cols: u16,
+    direction: Direction,
+    amount: u16,
+) -> Result<()> where W: Write {
+    let (column, row) = position;
+    // Position of the cursor in the context
+    // of the buffer
+    let pos = column - prompt_cols;
+
+    let (raw_buffer, new_col) = match direction {
+        Direction::Before => {
+            //if pos - amount > 0 {
+
+            //}
+            if pos > 0 {
+                let before = &buffer[0..pos as usize - 1];
+                let after = &buffer[pos as usize..];
+                let mut s = String::new();
+                s.push_str(before);
+                s.push_str(after);
+                (s, (prompt_cols + pos) - 1)
+            } else {
+                (buffer.clone(), column)
+            }
+        }
+        Direction::After => {
+            todo!()
+        }
+    };
+
+    let updated_line = if let Some(password) =
+        &options.password
+    {
+        if let Some(echo) = &password.echo {
+            let columns =
+                UnicodeWidthStr::width(&buffer[..]);
+            if columns > 0 {
+                echo.to_string().repeat(columns - 1)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        raw_buffer.clone()
+    };
+
+    redraw(
+        prefix.as_ref(),
+        writer,
+        (new_col, row),
+        &updated_line,
+    )?;
+    *buffer = raw_buffer;
     Ok(())
 }
 
