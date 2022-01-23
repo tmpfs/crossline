@@ -250,6 +250,13 @@ where
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
+                            KeyAction::EraseToLineBegin => {
+                                if (column as usize) > buf.prefix_columns() {
+                                    let amount =
+                                        column as usize - buf.prefix_columns();
+                                    buf.erase_before(writer, amount as usize)?;
+                                }
+                            }
                             KeyAction::ErasePreviousWord => {
                                 todo!("erase previous word")
                             }

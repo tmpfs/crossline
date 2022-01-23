@@ -1,10 +1,9 @@
 //! Buffer for a prefix and value that renders to
 //! the terminal.
 //!
-//! Its primarily responsbility is for converting string
-//! code points to columns so that we can handle multi-byte
-//! characters correctly.
-//!
+//! Its primarily responsbility is for converting strings
+//! to columns representing Unicode graphemes so that we
+//! can handle multi-byte characters correctly.
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -13,6 +12,7 @@ use crossterm::{
 };
 use std::borrow::Cow;
 use std::io::Write;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 /// Internal buffer for a string that operates on columns
@@ -52,6 +52,11 @@ impl<'a> TerminalBuffer<'a> {
         self.prefix_cols
     }
 
+    /// Get the number of columns for the buffer.
+    pub fn buffer_columns(&self) -> usize {
+        self.buffer_cols
+    }
+
     /// Set the terminal size
     pub fn set_size(&mut self, size: (u16, u16)) {
         self.size = size;
@@ -83,6 +88,12 @@ impl<'a> TerminalBuffer<'a> {
         Ok(())
     }
 
+    /// Get the graphemes for the buffer.
+    fn graphemes(&self) -> Vec<&str> {
+        UnicodeSegmentation::graphemes(&self.buffer[..], true)
+            .collect::<Vec<&str>>()
+    }
+
     /// Erase a number of columns before the cursor.
     pub fn erase_before<W>(
         &mut self,
@@ -92,19 +103,26 @@ impl<'a> TerminalBuffer<'a> {
     where
         W: Write,
     {
+        // Cursor position relative to start of the buffer
         let (column, row) = self.position;
-        let pos = column as usize - self.prefix_columns();
-        let (raw_buffer, new_col) = if pos > 0 {
-            let before = &self.buffer[0..pos as usize - amount];
-            let after = &self.buffer[pos as usize..];
-            let mut s = String::new();
-            s.push_str(before);
-            s.push_str(after);
-            (s, (self.prefix_columns() + pos) - 1)
-        } else {
-            (self.buffer.clone(), column as usize)
-        };
-        self.refresh(writer, raw_buffer, (new_col.try_into()?, row))
+        let pos: usize = column as usize - self.prefix_columns();
+
+        let graphemes = self.graphemes();
+        if graphemes.len() > 0 {
+            let start = if pos >= amount { pos - amount } else { amount };
+
+            let before_range = 0..start;
+            let after_range = pos..self.buffer_cols;
+
+            let mut new_buf = String::new();
+            new_buf.push_str(&graphemes[before_range].join(""));
+            new_buf.push_str(&graphemes[after_range].join(""));
+
+            let new_col = self.prefix_cols + (pos - amount);
+            self.refresh(writer, new_buf, (new_col.try_into()?, row))?;
+        }
+
+        Ok(())
     }
 
     /// Get a visible representation of the buffer.

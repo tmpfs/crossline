@@ -44,6 +44,9 @@ pub enum KeyAction {
     /// Move to end of the line.
     MoveToLineEnd,
 
+    /// Erase to the beginning of the line.
+    EraseToLineBegin,
+
     /// Erase the previous word.
     ErasePreviousWord,
 
@@ -216,6 +219,15 @@ impl Default for KeyBindings {
                     modifiers: KeyModifiers::CONTROL,
                 }),
                 actions: Box::new(|_| vec![KeyAction::MoveToLineEnd]),
+            },
+            // Ctrl+u
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('u'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![KeyAction::EraseToLineBegin]),
             },
             // Ctrl+w
             KeyDefinition {
