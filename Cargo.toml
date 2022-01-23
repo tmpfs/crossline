@@ -12,9 +12,10 @@ backtrace = "0.3"
 scopeguard = "1.1"
 
 [features]
-default = []
-history = []
+default = ["panic"]
 completion = []
+history = []
+panic = []
 shell = ["history", "completion"]
 
 [dev-dependencies]
