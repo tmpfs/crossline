@@ -257,6 +257,15 @@ where
                                     buf.erase_before(writer, amount as usize)?;
                                 }
                             }
+                            KeyAction::EraseToLineEnd => {
+                                panic!("erase to line end");
+                                if (column as usize) < buf.columns() {
+                                    let amount =
+                                        buf.columns() - (column as usize);
+                                    panic!("erase to line end {}", amount);
+                                    buf.erase_after(writer, amount as usize)?;
+                                }
+                            }
                             KeyAction::ErasePreviousWord => {
                                 todo!("erase previous word")
                             }

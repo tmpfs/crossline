@@ -52,12 +52,19 @@ impl<'a> TerminalBuffer<'a> {
         self.prefix_cols
     }
 
+    /*
     /// Get the number of columns for the buffer.
     pub fn buffer_columns(&self) -> usize {
         self.buffer_cols
     }
+    */
 
-    /// Set the terminal size
+    /// Get the total column width for the prefix and buffer.
+    pub fn columns(&self) -> usize {
+        self.prefix_cols + self.buffer_cols
+    }
+
+    /// Set the terminal size.
     pub fn set_size(&mut self, size: (u16, u16)) {
         self.size = size;
     }
@@ -103,22 +110,61 @@ impl<'a> TerminalBuffer<'a> {
     where
         W: Write,
     {
-        // Cursor position relative to start of the buffer
-        let (column, row) = self.position;
-        let pos: usize = column as usize - self.prefix_columns();
+        self.erase(writer, amount, true)
+    }
 
+    /// Erase a number of columns after the cursor.
+    pub fn erase_after<W>(
+        &mut self,
+        writer: &mut W,
+        amount: usize,
+    ) -> Result<()>
+    where
+        W: Write,
+    {
+        self.erase(writer, amount, false)
+    }
+
+    /// Erase a number of columns before or after the cursor.
+    fn erase<W>(
+        &mut self,
+        writer: &mut W,
+        amount: usize,
+        before: bool,
+    ) -> Result<()>
+    where
+        W: Write,
+    {
         let graphemes = self.graphemes();
         if graphemes.len() > 0 {
-            let start = if pos >= amount { pos - amount } else { amount };
+            // Cursor position relative to start of the buffer
+            let (column, row) = self.position;
+            let (before_end, after_start, new_col) = if before {
+                let after_start = column as usize - self.prefix_columns();
+                let before_end = if after_start >= amount {
+                    after_start - amount
+                } else {
+                    amount
+                };
+                let new_col = self.prefix_cols + (after_start - amount);
+                (before_end, after_start, new_col)
+            } else {
+                let before_end = column as usize - self.prefix_columns();
+                let after_start = if before_end + amount <= graphemes.len() {
+                    before_end + amount
+                } else {
+                    graphemes.len()
+                };
+                (before_end, after_start, column as usize)
+            };
 
-            let before_range = 0..start;
-            let after_range = pos..self.buffer_cols;
+            let before_range = 0..before_end;
+            let after_range = after_start..self.buffer_cols;
 
             let mut new_buf = String::new();
             new_buf.push_str(&graphemes[before_range].join(""));
             new_buf.push_str(&graphemes[after_range].join(""));
 
-            let new_col = self.prefix_cols + (pos - amount);
             self.refresh(writer, new_buf, (new_col.try_into()?, row))?;
         }
 
@@ -186,28 +232,26 @@ impl<'a> TerminalBuffer<'a> {
     where
         W: Write,
     {
+        let graphemes = self.graphemes();
+
         let (col, row) = self.position;
         let pos = col as usize - self.prefix_cols;
         let char_str = c.to_string();
 
         // Appending to the end
         let (before, after) = if pos as usize == self.buffer.len() {
-            (&self.buffer[..], "")
+            (&graphemes[..], &graphemes[graphemes.len()..])
         } else {
-            if pos > 0 {
-                let before = &self.buffer[0..pos as usize];
-                let after = &self.buffer[pos as usize..];
-                (before, after)
-            } else {
-                ("", "")
-            }
+            let before = &graphemes[0..pos as usize];
+            let after = &graphemes[pos as usize..];
+            (before, after)
         };
 
         // Prepare new line buffer
         let mut new_buf = String::new();
-        new_buf.push_str(before);
+        new_buf.push_str(&before.join(""));
         new_buf.push_str(&char_str[..]);
-        new_buf.push_str(after);
+        new_buf.push_str(&after.join(""));
 
         // Store the updated buffer
         self.update(new_buf);
