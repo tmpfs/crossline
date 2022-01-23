@@ -26,14 +26,6 @@ pub use options::*;
 #[doc(cfg(feature = "history"))]
 pub mod history;
 
-/// Type of stream.
-pub enum StreamType {
-    /// The Stdout stream.
-    Out,
-    /// The Stderr stream.
-    Err,
-}
-
 fn handle_panic_hook(info: &std::panic::PanicInfo) {
     let _ = disable_raw_mode();
     let thread = std::thread::current();
@@ -78,7 +70,7 @@ pub fn shell<'a, P, W, O, E, H>(
 ) -> Result<()>
 where
     P: Fn() -> &'a str,
-    W: Write + Send + Sync + 'a,
+    W: Write,
     O: Fn() -> &'a PromptOptions,
     E: Error + Send + Sync + 'static,
     H: Fn(String) -> std::result::Result<(), E>,
@@ -98,7 +90,7 @@ pub fn prompt<'a, S: AsRef<str>, W>(
     options: &PromptOptions,
 ) -> Result<String>
 where
-    W: Write + Send + Sync + 'a,
+    W: Write,
 {
     if prefix.as_ref().len() > u16::MAX as usize {
         bail!("prompt prefix is too long");
@@ -139,7 +131,7 @@ pub fn parse<'a, T, W, S: AsRef<str>>(
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: Error + Sync + Send + 'static,
-    W: Write + Send + Sync + 'a,
+    W: Write,
 {
     let value: String = prompt(prefix.as_ref(), writer, options)?;
     let value: T = (&value[..]).parse::<T>()?;
@@ -152,7 +144,7 @@ fn validate<'a, S: AsRef<str>, W>(
     options: &PromptOptions,
 ) -> Result<String>
 where
-    W: Write + Send + Sync + 'a,
+    W: Write,
 {
     let mut value = if let Some(validation) = &options.validation {
         let value = run(prefix.as_ref(), writer, options)?;
@@ -181,7 +173,7 @@ fn run<'a, S: AsRef<str>, W>(
     options: &PromptOptions,
 ) -> Result<String>
 where
-    W: Write + Send + Sync + 'a,
+    W: Write,
 {
     enable_raw_mode()?;
 
@@ -415,12 +407,12 @@ where
 
 // Redraw the prefix and value moving the cursor
 // to the given position.
-fn redraw<S: AsRef<str>>(
+fn redraw<S: AsRef<str>, W>(
     prefix: S,
-    writer: &mut dyn Write,
+    writer: &mut W,
     position: (u16, u16),
     value: &str,
-) -> Result<()> {
+) -> Result<()> where W: Write {
     let (col, row) = position;
     writer.queue(cursor::MoveTo(0, row))?;
     writer.queue(Clear(ClearType::CurrentLine))?;
@@ -460,15 +452,15 @@ fn write_bytes(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
 }
 
 // Write a character to the line.
-fn write_char<S: AsRef<str>>(
+fn write_char<S: AsRef<str>, W>(
     prefix: S,
     options: &PromptOptions,
-    writer: &mut dyn Write,
+    writer: &mut W,
     prompt_cols: u16,
     position: (u16, u16),
     line: &mut String,
     c: char,
-) -> Result<()> {
+) -> Result<()> where W: Write {
     let (col, row) = position;
     let pos = col - prompt_cols;
     let char_str = c.to_string();
