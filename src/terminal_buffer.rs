@@ -1,8 +1,8 @@
-//! Buffer for a prefix and value that renders to 
+//! Buffer for a prefix and value that renders to
 //! the terminal.
 //!
-//! Its primarily responsbility is for converting string 
-//! code points to columns so that we can handle multi-byte 
+//! Its primarily responsbility is for converting string
+//! code points to columns so that we can handle multi-byte
 //! characters correctly.
 //!
 use anyhow::Result;
@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 /// Internal buffer for a string that operates on columns
 /// and rows and may include a prefix to the buffer value.
-pub struct StringBuffer<'a> {
+pub struct TerminalBuffer<'a> {
     prefix: &'a str,
     buffer: String,
     prefix_cols: usize,
@@ -27,7 +27,7 @@ pub struct StringBuffer<'a> {
     position: (u16, u16),
 }
 
-impl<'a> StringBuffer<'a> {
+impl<'a> TerminalBuffer<'a> {
     /// Create a new buffer using the given prefix and mask character.
     pub fn new(prefix: &'a str, echo: Option<char>) -> Self {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
@@ -47,11 +47,6 @@ impl<'a> StringBuffer<'a> {
         &self.buffer
     }
 
-    /// Get a mutable reference to the underlying buffer.
-    pub fn buffer_mut(&mut self) -> &mut String {
-        &mut self.buffer
-    }
-
     /// Get the number of columns for the prefix.
     pub fn prefix_columns(&self) -> usize {
         self.prefix_cols
@@ -68,14 +63,48 @@ impl<'a> StringBuffer<'a> {
     }
 
     /// Update the buffer to a new value.
-    pub fn update(&mut self, value: String) {
+    fn update(&mut self, value: String) {
         self.buffer_cols = UnicodeWidthStr::width(&value[..]);
         self.buffer = value;
     }
 
-    /// The number of columns this buffer occupies.
-    pub fn columns(&self) -> usize {
-        self.prefix_cols + self.buffer_cols
+    /// Push a character onto the buffer and write it but do not flush
+    /// the stream.
+    ///
+    /// This should only be used for control characters and newlines
+    /// as it does not respect the masking of visible characters when
+    /// echo has been set.
+    pub fn push<W>(&mut self, writer: &mut W, c: char) -> Result<()>
+    where
+        W: Write,
+    {
+        self.buffer.push(c);
+        writer.write(c.to_string().as_bytes())?;
+        Ok(())
+    }
+
+    /// Erase a number of columns before the cursor.
+    pub fn erase_before<W>(
+        &mut self,
+        writer: &mut W,
+        amount: usize,
+    ) -> Result<()>
+    where
+        W: Write,
+    {
+        let (column, row) = self.position;
+        let pos = column as usize - self.prefix_columns();
+        let (raw_buffer, new_col) = if pos > 0 {
+            let before = &self.buffer[0..pos as usize - amount];
+            let after = &self.buffer[pos as usize..];
+            let mut s = String::new();
+            s.push_str(before);
+            s.push_str(after);
+            (s, (self.prefix_columns() + pos) - 1)
+        } else {
+            (self.buffer.clone(), column as usize)
+        };
+        self.refresh(writer, raw_buffer, (new_col.try_into()?, row))
     }
 
     /// Get a visible representation of the buffer.
@@ -89,10 +118,18 @@ impl<'a> StringBuffer<'a> {
     }
 
     /// Write bytes to the stream and flush.
-    pub fn write_bytes(&self, writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
+    fn write_bytes(&self, writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
         writer.write(bytes)?;
         writer.flush()?;
         Ok(())
+    }
+
+    /// Write the prefix and flush the stream.
+    pub fn write_prefix<W>(&mut self, writer: &mut W) -> Result<()>
+    where
+        W: Write,
+    {
+        self.write_bytes(writer, self.prefix.as_bytes())
     }
 
     /// Redraw the prefix and buffer moving the cursor
@@ -113,7 +150,12 @@ impl<'a> StringBuffer<'a> {
 
     /// Redraw the prefix and buffer moving the cursor
     /// to the given position.
-    pub fn refresh<W, S: AsRef<str>>(&mut self, writer: &mut W, buf: S, position: (u16, u16)) -> Result<()>
+    pub fn refresh<W, S: AsRef<str>>(
+        &mut self,
+        writer: &mut W,
+        buf: S,
+        position: (u16, u16),
+    ) -> Result<()>
     where
         W: Write,
     {
@@ -174,7 +216,7 @@ impl<'a> StringBuffer<'a> {
     }
 }
 
-impl Into<String> for StringBuffer<'_> {
+impl Into<String> for TerminalBuffer<'_> {
     fn into(self) -> String {
         self.buffer
     }
