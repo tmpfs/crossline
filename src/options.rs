@@ -18,7 +18,7 @@ pub struct PromptOptions {
     pub(crate) required: Option<Required>,
 
     /// Options for password capture.
-    pub(crate) password: Option<PassWord>,
+    pub(crate) password: Option<Password>,
 
     /// Options for multiline input.
     ///
@@ -50,7 +50,7 @@ impl PromptOptions {
     }
 
     /// Configure password for these options.
-    pub fn password(mut self, password: PassWord) -> Self {
+    pub fn password(mut self, password: Password) -> Self {
         self.password = Some(password);
         self
     }
@@ -104,14 +104,14 @@ pub struct Required {
 }
 
 /// The options for password mode.
-pub struct PassWord {
+pub struct Password {
     /// Character to echo for each character input.
     ///
     /// Default is to print the asterisk ('*').
     pub echo: Option<char>,
 }
 
-impl Default for PassWord {
+impl Default for Password {
     fn default() -> Self {
         Self { echo: Some('*') }
     }
