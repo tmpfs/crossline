@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::io::Write;
 
+mod command;
 mod key_binding;
 mod options;
 
@@ -21,14 +22,15 @@ mod options;
 #[doc(cfg(feature = "panic"))]
 mod panic;
 
+mod terminal_buffer;
+
 #[cfg(feature = "panic")]
 pub use panic::{stderr_panic_hook, stdout_panic_hook};
-
-mod terminal_buffer;
 
 pub use key_binding::*;
 pub use options::*;
 use terminal_buffer::TerminalBuffer;
+pub use command::Command;
 
 #[cfg(any(feature = "history", doc))]
 #[doc(cfg(feature = "history"))]
@@ -181,10 +183,10 @@ where
                 if let Some(actions) = options.bindings.first(&event) {
                     for action in actions {
                         match action {
-                            KeyAction::WriteChar(c) => {
+                            Command::WriteChar(c) => {
                                 buf.write_char(writer, c)?;
                             }
-                            KeyAction::SubmitLine => {
+                            Command::SubmitLine => {
                                 if let Some(multiline) = &options.multiline {
                                     buf.push(writer, '\n')?;
                                     writer
@@ -221,7 +223,7 @@ where
                                     break 'prompt;
                                 }
                             }
-                            KeyAction::MoveCursorLeft => {
+                            Command::MoveCursorLeft => {
                                 if column as usize > buf.prefix_columns() {
                                     writer.execute(cursor::MoveTo(
                                         column - 1,
@@ -229,7 +231,7 @@ where
                                     ))?;
                                 }
                             }
-                            KeyAction::MoveCursorRight => {
+                            Command::MoveCursorRight => {
                                 let position = buf.end_pos(buf.buffer());
 
                                 if column < position.0 {
@@ -239,48 +241,48 @@ where
                                     ))?;
                                 }
                             }
-                            KeyAction::EraseCharacter => {
+                            Command::EraseCharacter => {
                                 buf.erase_before(writer, 1)?;
                             }
-                            KeyAction::AbortPrompt => {
+                            Command::AbortPrompt => {
                                 writer.execute(cursor::MoveToNextLine(1))?;
                                 break 'prompt;
                             }
-                            KeyAction::ClearScreen => {
+                            Command::ClearScreen => {
                                 writer.queue(Clear(ClearType::All))?;
                                 writer.queue(cursor::MoveTo(0, 0))?;
                                 buf.write_prefix(writer)?;
                             }
-                            KeyAction::MoveToLineBegin => {
+                            Command::MoveToLineBegin => {
                                 writer.execute(cursor::MoveTo(
                                     buf.prefix_columns().try_into()?,
                                     row,
                                 ))?;
                             }
-                            KeyAction::MoveToLineEnd => {
+                            Command::MoveToLineEnd => {
                                 let position = buf.end_pos(buf.buffer());
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
-                            KeyAction::EraseToLineBegin => {
+                            Command::EraseToLineBegin => {
                                 if (column as usize) > buf.prefix_columns() {
                                     let amount =
                                         column as usize - buf.prefix_columns();
                                     buf.erase_before(writer, amount as usize)?;
                                 }
                             }
-                            KeyAction::EraseToLineEnd => {
+                            Command::EraseToLineEnd => {
                                 if (column as usize) < buf.columns() {
                                     let amount =
                                         buf.columns() - (column as usize);
                                     buf.erase_after(writer, amount as usize)?;
                                 }
                             }
-                            KeyAction::ErasePreviousWord => {
+                            Command::ErasePreviousWord => {
                                 buf.erase_word_before(writer)?;
                             }
                             #[cfg(feature = "history")]
-                            KeyAction::HistoryPrevious => {
+                            Command::HistoryPrevious => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
 
@@ -304,7 +306,7 @@ where
                                 }
                             }
                             #[cfg(feature = "history")]
-                            KeyAction::HistoryNext => {
+                            Command::HistoryNext => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
                                     if let Some(history_line) = history.next() {
