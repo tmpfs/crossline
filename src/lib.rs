@@ -198,10 +198,12 @@ where
                                     }
                                 } else {
                                     #[cfg(feature = "history")]
-                                    if let Some(history) = &options.history {
-                                        let mut writer =
-                                            history.lock().unwrap();
-                                        writer.push(buf.buffer().to_string());
+                                    if options.password.is_none() {
+                                        if let Some(history) = &options.history {
+                                            let mut writer =
+                                                history.lock().unwrap();
+                                            writer.push(buf.buffer().to_string());
+                                        }
                                     }
 
                                     if row == height - 1 {
