@@ -1,6 +1,6 @@
 //! Type for declaring key bindings.
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::command::Command;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Wraps a key event to distinguish between named
 /// key codes and arbitrary input.

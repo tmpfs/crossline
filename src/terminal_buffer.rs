@@ -15,6 +15,36 @@ use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+type Position = (u16, u16);
+type Dimension = (u16, u16);
+
+/// Count the number of rows occupied by a prefix and buffer
+/// accounting for wrapping to the terminal width and any newlines
+/// in the prefix or buffer.
+fn count_prompt_rows(
+    size: &Dimension,
+    prefix: &str,
+    buffer: &str,
+    prefix_cols: usize,
+    buffer_cols: usize,
+) -> usize {
+    let width = size.0 as usize;
+    let mut rows = (prefix_cols + buffer_cols) / width;
+    if rows % width != 0 {
+        rows += 1;
+    }
+    for c in prefix.chars().chain(buffer.chars()) {
+        if c == '\n' {
+            rows += 1;
+        }
+    }
+    if rows == 0 {
+        1
+    } else {
+        rows
+    }
+}
+
 /// Internal buffer for a string that operates on columns
 /// and rows and may include a prefix to the buffer value.
 pub struct TerminalBuffer<'a> {
@@ -23,23 +53,47 @@ pub struct TerminalBuffer<'a> {
     prefix_cols: usize,
     buffer_cols: usize,
     echo: Option<char>,
-    size: (u16, u16),
-    position: (u16, u16),
+    size: Dimension,
+    start_position: Position,
+    position: Position,
+    // Number of rows being rendered
+    row_count: usize,
+    current_row: usize,
 }
 
 impl<'a> TerminalBuffer<'a> {
     /// Create a new buffer using the given prefix and mask character.
-    pub fn new(prefix: &'a str, echo: Option<char>) -> Self {
+    pub fn new(
+        prefix: &'a str,
+        size: Dimension,
+        position: Position,
+        echo: Option<char>,
+    ) -> Self {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
+        let buffer = String::new();
         Self {
             prefix,
             prefix_cols,
-            buffer: String::new(),
             buffer_cols: 0,
             echo,
-            size: (0, 0),
-            position: (0, 0),
+            start_position: position.clone(),
+            position,
+            row_count: count_prompt_rows(
+                &size,
+                prefix,
+                &buffer,
+                prefix_cols,
+                0,
+            ),
+            current_row: 0,
+            size,
+            buffer,
         }
+    }
+
+    /// Determine if the cursor is on the first line of input.
+    pub fn is_first_line(&self) -> bool {
+        self.current_row == 0
     }
 
     /// Get the underlying buffer.
@@ -59,19 +113,14 @@ impl<'a> TerminalBuffer<'a> {
     }
     */
 
-    /// Count the number of rows this buffer occupies.
-    pub fn count_rows(&self) -> usize {
-        let width = self.size.0 as usize;
-        let mut rows = (self.prefix_cols + self.buffer_cols) / width;
-        if rows % width != 0 {
-            rows += 1;
-        }
-        for c in self.prefix.chars().chain(self.buffer.chars()) {
-            if c == '\n' {
-                rows += 1;
-            }
-        }
-        rows
+    fn count_rows(&self) -> usize {
+        count_prompt_rows(
+            &self.size,
+            self.prefix,
+            &self.buffer,
+            self.prefix_cols,
+            self.buffer_cols,
+        )
     }
 
     /// Get the total column width for the prefix and buffer.
@@ -80,19 +129,19 @@ impl<'a> TerminalBuffer<'a> {
     }
 
     /// Set the terminal size.
-    pub fn set_size(&mut self, size: (u16, u16)) {
+    pub fn set_size(&mut self, size: Dimension) {
         self.size = size;
     }
 
     /// Set the cursor position.
-    pub fn set_position(&mut self, position: (u16, u16)) {
+    pub fn set_position(&mut self, position: Position) {
         self.position = position;
     }
 
     /// Update the buffer to a new value.
-    fn update(&mut self, value: String) {
-        self.buffer_cols = UnicodeWidthStr::width(&value[..]);
-        self.buffer = value;
+    fn update<S: AsRef<str>>(&mut self, value: S) {
+        self.buffer_cols = UnicodeWidthStr::width(&value.as_ref()[..]);
+        self.buffer = value.as_ref().to_string();
     }
 
     /// Push a character onto the buffer and write it but do not flush
@@ -236,14 +285,17 @@ impl<'a> TerminalBuffer<'a> {
 
     /// Redraw the prefix and buffer moving the cursor
     /// to the given position.
-    pub fn redraw<W>(&self, writer: &mut W, position: (u16, u16)) -> Result<()>
+    pub fn redraw<W>(&self, writer: &mut W, position: Position) -> Result<()>
     where
         W: Write,
     {
         let (col, row) = position;
+
         writer.queue(cursor::MoveTo(0, row))?;
         writer.queue(Clear(ClearType::CurrentLine))?;
-        writer.write(self.prefix.as_bytes())?;
+        if self.is_first_line() {
+            writer.write(self.prefix.as_bytes())?;
+        }
         writer.write(self.visible().as_ref().as_bytes())?;
         writer.queue(cursor::MoveTo(col, row))?;
         writer.flush()?;
@@ -273,7 +325,12 @@ impl<'a> TerminalBuffer<'a> {
         let graphemes = self.graphemes();
 
         let (col, row) = self.position;
-        let pos = col as usize - self.prefix_cols;
+        let pos = if self.is_first_line() {
+            col as usize - self.prefix_cols
+        } else {
+            col as usize
+        };
+
         let char_str = c.to_string();
 
         // Appending to the end
@@ -294,7 +351,23 @@ impl<'a> TerminalBuffer<'a> {
         // Store the updated buffer
         self.update(new_buf);
 
-        let new_pos = ((self.prefix_cols + pos + 1) as u16, row);
+        // We have an updated buffer column count so can
+        // calculate the rows
+        let num_rows = self.count_rows();
+
+        // Moving on original line
+        let new_pos = if num_rows == self.row_count {
+            ((self.prefix_cols + pos + 1) as u16, row)
+        // Wrapping on to new line
+        } else {
+            self.current_row = num_rows - self.row_count;
+            (
+                0,
+                (self.start_position.1 as usize + self.current_row)
+                    .try_into()?,
+            )
+        };
+
         self.redraw(writer, new_pos)?;
 
         Ok(())

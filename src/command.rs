@@ -41,4 +41,3 @@ pub enum Command {
     #[doc(cfg(feature = "history"))]
     HistoryNext,
 }
-

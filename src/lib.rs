@@ -5,7 +5,7 @@
 //! Prompt library for crossterm.
 use anyhow::{bail, Result};
 use crossterm::{
-    cursor,
+    cursor::{self, position},
     event::{read, Event},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
     ExecutableCommand, QueueableCommand,
@@ -27,10 +27,10 @@ mod terminal_buffer;
 #[cfg(feature = "panic")]
 pub use panic::{stderr_panic_hook, stdout_panic_hook};
 
+pub use command::Command;
 pub use key_binding::*;
 pub use options::*;
 use terminal_buffer::TerminalBuffer;
-pub use command::Command;
 
 #[cfg(any(feature = "history", doc))]
 #[doc(cfg(feature = "history"))]
@@ -163,7 +163,8 @@ where
     } else {
         None
     };
-    let mut buf = TerminalBuffer::new(prefix.as_ref(), echo);
+    let mut buf =
+        TerminalBuffer::new(prefix.as_ref(), size()?, position()?, echo);
 
     #[cfg(feature = "history")]
     let mut history_buffer = String::new();
@@ -173,7 +174,7 @@ where
 
     'prompt: loop {
         let (width, height) = size()?;
-        let (column, row) = cursor::position()?;
+        let (column, row) = position()?;
 
         buf.set_size((width, height));
         buf.set_position((column, row));
