@@ -242,7 +242,7 @@ where
                                     ))?;
                                 }
                             }
-                            Command::EraseCharacter => {
+                            Command::BackwardDeleteChar => {
                                 buf.erase_before(writer, 1)?;
                             }
                             Command::AbortPrompt => {

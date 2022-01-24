@@ -115,7 +115,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Backspace,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::EraseCharacter]),
+                actions: Box::new(|_| vec![Command::BackwardDeleteChar]),
             },
             #[cfg(any(feature = "history", doc))]
             // Up
@@ -217,6 +217,24 @@ impl Default for KeyBindings {
                     modifiers: KeyModifiers::CONTROL,
                 }),
                 actions: Box::new(|_| vec![Command::AcceptLine]),
+            },
+            // Ctrl+m
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('m'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![Command::AcceptLine]),
+            },
+            // Ctrl+h
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('h'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![Command::BackwardDeleteChar]),
             },
         ];
 

@@ -5,14 +5,14 @@
 pub enum Command {
     /// Write the character to the terminal.
     WriteChar(char),
-    /// Accept the line.
+    /// Accept the line (`accept-line`).
     AcceptLine,
     /// Move cursor left.
     MoveCursorLeft,
     /// Move cursor right.
     MoveCursorRight,
-    /// Erase the last character.
-    EraseCharacter,
+    /// Erase the last character (`backward-delete-char`).
+    BackwardDeleteChar,
     /// Clear the screen.
     ClearScreen,
     /// Abort the prompt.
