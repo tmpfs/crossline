@@ -3,7 +3,7 @@
 /// Options for history implementations.
 pub struct HistoryOptions {
     /// Maximum number of history items.
-    maximum_size: u16,
+    maximum_size: usize,
 }
 
 impl Default for HistoryOptions {
@@ -14,11 +14,12 @@ impl Default for HistoryOptions {
 
 // TODO: implement backing file locked using file-guard
 // TODO: file write should happen when the program exits
+//
 // TODO: implement searching history
 
 /// Trait for history implementations.
 pub trait History {
-    /// Determine if the cursor point to the last entry.
+    /// Determine if the cursor points to the last entry.
     fn is_last(&self) -> bool;
 
     /// Remove all the history items and reset the cursor.
@@ -56,7 +57,7 @@ impl MemoryHistory {
     /// Create a new in-memory history.
     pub fn new(options: HistoryOptions) -> Self {
         Self {
-            items: vec![],
+            items: Vec::with_capacity(options.maximum_size),
             cursor: None,
             options,
         }
