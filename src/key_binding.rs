@@ -117,7 +117,6 @@ impl Default for KeyBindings {
                 }),
                 actions: Box::new(|_| vec![Command::BackwardDeleteChar]),
             },
-            #[cfg(any(feature = "history", doc))]
             // Up
             KeyDefinition {
                 kind: KeyType::Named,
@@ -125,9 +124,8 @@ impl Default for KeyBindings {
                     code: KeyCode::Up,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::HistoryPrevious]),
+                actions: Box::new(|_| vec![Command::PreviousHistory]),
             },
-            #[cfg(any(feature = "history", doc))]
             // Down
             KeyDefinition {
                 kind: KeyType::Named,
@@ -135,7 +133,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Down,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::HistoryNext]),
+                actions: Box::new(|_| vec![Command::NextHistory]),
             },
             // Ctrl+c
             KeyDefinition {
@@ -189,7 +187,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('u'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::EraseToLineBegin]),
+                actions: Box::new(|_| vec![Command::BackwardKillLine]),
             },
             // Ctrl+k
             KeyDefinition {
@@ -207,7 +205,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('w'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::ErasePreviousWord]),
+                actions: Box::new(|_| vec![Command::BackwardKillWord]),
             },
             // Ctrl+j
             KeyDefinition {
@@ -235,6 +233,26 @@ impl Default for KeyBindings {
                     modifiers: KeyModifiers::CONTROL,
                 }),
                 actions: Box::new(|_| vec![Command::BackwardDeleteChar]),
+            },
+            #[cfg(feature = "history")]
+            // Ctrl+p
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('p'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![Command::PreviousHistory]),
+            },
+            #[cfg(feature = "history")]
+            // Ctrl+n
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('n'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![Command::NextHistory]),
             },
         ];
 

@@ -265,7 +265,7 @@ where
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
-                            Command::EraseToLineBegin => {
+                            Command::BackwardKillLine => {
                                 if (column as usize) > buf.prefix_columns() {
                                     let amount =
                                         column as usize - buf.prefix_columns();
@@ -279,11 +279,11 @@ where
                                     buf.erase_after(writer, amount as usize)?;
                                 }
                             }
-                            Command::ErasePreviousWord => {
+                            Command::BackwardKillWord => {
                                 buf.erase_word_before(writer)?;
                             }
                             #[cfg(feature = "history")]
-                            Command::HistoryPrevious => {
+                            Command::PreviousHistory => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
 
@@ -307,7 +307,7 @@ where
                                 }
                             }
                             #[cfg(feature = "history")]
-                            Command::HistoryNext => {
+                            Command::NextHistory => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
                                     if let Some(history_line) = history.next() {

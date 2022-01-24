@@ -13,7 +13,7 @@ pub enum Command {
     MoveCursorRight,
     /// Erase the last character (`backward-delete-char`).
     BackwardDeleteChar,
-    /// Clear the screen.
+    /// Clear the screen (`clear-screen`).
     ClearScreen,
     /// Abort the prompt.
     AbortPrompt,
@@ -23,13 +23,13 @@ pub enum Command {
     MoveToLineEnd,
 
     /// Erase to the beginning of the line.
-    EraseToLineBegin,
+    BackwardKillLine,
 
     /// Erase to the end of the line.
     EraseToLineEnd,
 
     /// Erase the previous word.
-    ErasePreviousWord,
+    BackwardKillWord,
 
     // TODO: Ctrl+b
     //BackwardWord,
@@ -37,13 +37,13 @@ pub enum Command {
     // TODO: Ctrl+f
     //ForwardWord,
 
-    /// Go to previous history item.
+    /// Go to previous history item (`previous-history`).
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]
-    HistoryPrevious,
+    PreviousHistory,
 
-    /// Go to next history item.
+    /// Go to next history item (`next-history`).
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]
-    HistoryNext,
+    NextHistory,
 }
