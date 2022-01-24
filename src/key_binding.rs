@@ -171,7 +171,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('a'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::MoveToLineBegin]),
+                actions: Box::new(|_| vec![Command::BeginningOfLine]),
             },
             // Ctrl+e
             KeyDefinition {

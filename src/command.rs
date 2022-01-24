@@ -17,18 +17,18 @@ pub enum Command {
     BackwardDeleteChar,
     /// Clear the screen (`clear-screen`).
     ClearScreen,
-    /// Move to beginning of the line.
-    MoveToLineBegin,
-    /// Move to end of the line.
-    MoveToLineEnd,
+    /// Move to beginning of the line (`beginning-of-line`).
+    BeginningOfLine,
+    /// Move to end of the line (`end-of-line`).
+    EndOfLine,
 
-    /// Erase to the beginning of the line.
+    /// Erase to the beginning of the line (`backward-kill-line`).
     BackwardKillLine,
 
-    /// Erase to the end of the line.
-    EraseToLineEnd,
+    /// Erase to the end of the line (`kill-line`).
+    KillLine,
 
-    /// Erase the previous word.
+    /// Erase the previous word (`backward-kill-word`).
     BackwardKillWord,
 
     // TODO: Ctrl+b
@@ -36,6 +36,7 @@ pub enum Command {
 
     // TODO: Ctrl+f
     //ForwardWord,
+
     /// Go to previous history item (`previous-history`).
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]

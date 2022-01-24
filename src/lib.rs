@@ -271,7 +271,7 @@ where
                                 writer.queue(cursor::MoveTo(0, 0))?;
                                 buf.write_prefix(writer)?;
                             }
-                            Command::MoveToLineBegin => {
+                            Command::BeginningOfLine => {
                                 writer.execute(cursor::MoveTo(
                                     buf.prefix_columns().try_into()?,
                                     row,
