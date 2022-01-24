@@ -152,8 +152,7 @@ impl<'a> TerminalBuffer<'a> {
     /// Resize the dimensions and update computations.
     pub fn resize(&mut self, size: Dimension) {
         self.set_size(size);
-        let copy = self.buffer.clone();
-        self.update(copy);
+        self.buffer_cols = UnicodeWidthStr::width(&self.buffer[..]);
     }
 
     /// Push a character onto the buffer and write it but do not flush
