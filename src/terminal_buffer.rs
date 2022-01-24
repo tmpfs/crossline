@@ -18,33 +18,6 @@ use unicode_width::UnicodeWidthStr;
 type Position = (u16, u16);
 type Dimension = (u16, u16);
 
-/// Count the number of rows occupied by a prefix and buffer
-/// accounting for wrapping to the terminal width and any newlines
-/// in the prefix or buffer.
-fn count_prompt_rows(
-    size: &Dimension,
-    prefix: &str,
-    buffer: &str,
-    prefix_cols: usize,
-    buffer_cols: usize,
-) -> usize {
-    let width = size.0 as usize;
-    let mut rows = (prefix_cols + buffer_cols) / width;
-    if rows % width != 0 {
-        rows += 1;
-    }
-    for c in prefix.chars().chain(buffer.chars()) {
-        if c == '\n' {
-            rows += 1;
-        }
-    }
-    if rows == 0 {
-        1
-    } else {
-        rows
-    }
-}
-
 /// Virtualized view of the string buffer as a
 /// series of wrapped rows.
 struct Lines {
@@ -57,6 +30,34 @@ impl Lines {
     fn is_first_line(&self) -> bool {
         self.current == 0
     }
+
+    /// Count the number of rows occupied by a prefix and buffer
+    /// accounting for wrapping to the terminal width and any newlines
+    /// in the prefix or buffer.
+    fn count(
+        size: &Dimension,
+        prefix: &str,
+        buffer: &str,
+        prefix_cols: usize,
+        buffer_cols: usize,
+    ) -> usize {
+        let width = size.0 as usize;
+        let mut rows = (prefix_cols + buffer_cols) / width;
+        if rows % width != 0 {
+            rows += 1;
+        }
+        for c in prefix.chars().chain(buffer.chars()) {
+            if c == '\n' {
+                rows += 1;
+            }
+        }
+        if rows == 0 {
+            1
+        } else {
+            rows
+        }
+    }
+
 }
 
 /// Internal buffer for a string that operates on columns
@@ -84,8 +85,7 @@ impl<'a> TerminalBuffer<'a> {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
         let buffer = String::new();
 
-        let count = count_prompt_rows(&size, prefix, &buffer, prefix_cols, 0);
-
+        let count = Lines::count(&size, prefix, &buffer, prefix_cols, 0);
         let lines = Lines { current: 0, count };
 
         Self {
@@ -119,7 +119,7 @@ impl<'a> TerminalBuffer<'a> {
     */
 
     fn count_rows(&self) -> usize {
-        count_prompt_rows(
+        Lines::count(
             &self.size,
             self.prefix,
             &self.buffer,
@@ -153,6 +153,7 @@ impl<'a> TerminalBuffer<'a> {
     pub fn resize(&mut self, size: Dimension) {
         self.set_size(size);
         self.buffer_cols = UnicodeWidthStr::width(&self.buffer[..]);
+        self.count_rows();
     }
 
     /// Push a character onto the buffer and write it but do not flush
