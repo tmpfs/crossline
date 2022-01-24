@@ -187,7 +187,7 @@ where
                             Command::WriteChar(c) => {
                                 buf.write_char(writer, c)?;
                             }
-                            Command::SubmitLine => {
+                            Command::AcceptLine => {
                                 if let Some(multiline) = &options.multiline {
                                     buf.push(writer, '\n')?;
                                     writer

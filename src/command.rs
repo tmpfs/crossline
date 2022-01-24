@@ -5,8 +5,8 @@
 pub enum Command {
     /// Write the character to the terminal.
     WriteChar(char),
-    /// Submit the line.
-    SubmitLine,
+    /// Accept the line.
+    AcceptLine,
     /// Move cursor left.
     MoveCursorLeft,
     /// Move cursor right.
@@ -30,6 +30,12 @@ pub enum Command {
 
     /// Erase the previous word.
     ErasePreviousWord,
+
+    // TODO: Ctrl+b
+    //BackwardWord,
+
+    // TODO: Ctrl+f
+    //ForwardWord,
 
     /// Go to previous history item.
     #[cfg(any(feature = "history", doc))]

@@ -88,7 +88,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Enter,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::SubmitLine]),
+                actions: Box::new(|_| vec![Command::AcceptLine]),
             },
             // Left
             KeyDefinition {
@@ -195,8 +195,8 @@ impl Default for KeyBindings {
             KeyDefinition {
                 kind: KeyType::Named,
                 event: Some(KeyEvent {
-                    code: KeyCode::Char('u'),
-                    modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                    code: KeyCode::Char('k'),
+                    modifiers: KeyModifiers::CONTROL,
                 }),
                 actions: Box::new(|_| vec![Command::EraseToLineEnd]),
             },
