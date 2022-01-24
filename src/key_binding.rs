@@ -209,6 +209,15 @@ impl Default for KeyBindings {
                 }),
                 actions: Box::new(|_| vec![Command::ErasePreviousWord]),
             },
+            // Ctrl+j
+            KeyDefinition {
+                kind: KeyType::Named,
+                event: Some(KeyEvent {
+                    code: KeyCode::Char('j'),
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                actions: Box::new(|_| vec![Command::AcceptLine]),
+            },
         ];
 
         Self { bindings }
