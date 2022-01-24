@@ -59,6 +59,21 @@ impl<'a> TerminalBuffer<'a> {
     }
     */
 
+    /// Count the number of rows this buffer occupies.
+    pub fn count_rows(&self) -> usize {
+        let width = self.size.0 as usize;
+        let mut rows = (self.prefix_cols + self.buffer_cols) / width;
+        if rows % width != 0 {
+            rows += 1;
+        }
+        for c in self.prefix.chars().chain(self.buffer.chars()) {
+            if c == '\n' {
+                rows += 1;
+            }
+        }
+        rows
+    }
+
     /// Get the total column width for the prefix and buffer.
     pub fn columns(&self) -> usize {
         self.prefix_cols + self.buffer_cols
