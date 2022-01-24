@@ -8,6 +8,8 @@ fn main() -> Result<()> {
     let mut stdout = std::io::stdout();
     let options = PromptOptions::new().required(Default::default());
     let value = prompt("Enter a non-empty value: ", &mut stdout, &options)?;
-    println!("value: {}", value);
+    if let Some(result) = &value {
+        println!("value: {}", result);
+    }
     Ok(())
 }

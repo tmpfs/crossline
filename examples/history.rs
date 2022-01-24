@@ -19,11 +19,13 @@ fn main() -> Result<()> {
         &mut stdout,
         || &options,
         |command| {
-            match &command[..] {
-                "q" | "quit" => {
-                    std::process::exit(0);
+            if let Some(cmd) = command {
+                match &cmd[..] {
+                    "q" | "quit" => {
+                        std::process::exit(0);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
             Ok::<(), Error>(())
         },

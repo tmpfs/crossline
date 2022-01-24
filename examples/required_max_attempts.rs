@@ -12,10 +12,12 @@ fn main() -> Result<()> {
     });
     let value =
         prompt("Enter an empty value 3 times: ", &mut stdout, &options)?;
-    if value.is_empty() {
-        println!("aborted after 3 attempts");
-    } else {
-        println!("you entered a value: {}", value);
+    if let Some(result) = &value {
+        if result.is_empty() {
+            println!("aborted after 3 attempts");
+        } else {
+            println!("you entered a value: {}", result);
+        }
     }
     Ok(())
 }

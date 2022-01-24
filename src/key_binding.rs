@@ -97,7 +97,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Left,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::MoveCursorLeft]),
+                actions: Box::new(|_| vec![Command::BackwardChar]),
             },
             // Right
             KeyDefinition {
@@ -106,7 +106,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Right,
                     modifiers: KeyModifiers::NONE,
                 }),
-                actions: Box::new(|_| vec![Command::MoveCursorRight]),
+                actions: Box::new(|_| vec![Command::ForwardChar]),
             },
             // Backspace
             KeyDefinition {
@@ -118,6 +118,7 @@ impl Default for KeyBindings {
                 actions: Box::new(|_| vec![Command::BackwardDeleteChar]),
             },
             // Up
+            #[cfg(feature = "history")]
             KeyDefinition {
                 kind: KeyType::Named,
                 event: Some(KeyEvent {
@@ -127,6 +128,7 @@ impl Default for KeyBindings {
                 actions: Box::new(|_| vec![Command::PreviousHistory]),
             },
             // Down
+            #[cfg(feature = "history")]
             KeyDefinition {
                 kind: KeyType::Named,
                 event: Some(KeyEvent {
@@ -142,16 +144,16 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('c'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::AbortPrompt]),
+                actions: Box::new(|_| vec![Command::Abort]),
             },
-            // Ctrl+d
+            // Ctrl+g
             KeyDefinition {
                 kind: KeyType::Named,
                 event: Some(KeyEvent {
-                    code: KeyCode::Char('d'),
+                    code: KeyCode::Char('g'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::AbortPrompt]),
+                actions: Box::new(|_| vec![Command::Abort]),
             },
             // Ctrl+l
             KeyDefinition {

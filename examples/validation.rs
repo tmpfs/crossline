@@ -17,6 +17,8 @@ fn main() -> Result<()> {
         }),
     });
     let value = prompt(r#"Enter the word "world": "#, &mut stdout, &options)?;
-    println!("Hello, {}!", value);
+    if let Some(result) = &value {
+        println!("Hello, {}!", result);
+    }
     Ok(())
 }

@@ -50,7 +50,7 @@ where
     W: Write,
     O: Fn() -> &'a PromptOptions,
     E: Error + Send + Sync + 'static,
-    H: Fn(String) -> std::result::Result<(), E>,
+    H: Fn(Option<String>) -> std::result::Result<(), E>,
 {
     loop {
         let prompt_prefix = (prefix)();
@@ -61,11 +61,13 @@ where
 }
 
 /// Show a prompt.
+///
+/// If the prompt is aborted the return value will be `None`.
 pub fn prompt<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
@@ -78,17 +80,19 @@ where
         let mut attempts = 0u16;
         loop {
             value = validate(prefix.as_ref(), writer, options)?;
-            let check_value = if required.trim {
-                value.trim()
-            } else {
-                &value[..]
-            };
-            attempts += 1;
-            if !check_value.is_empty()
-                || (required.max_attempts > 0
-                    && attempts >= required.max_attempts)
-            {
-                break;
+            if let Some(result) = &value {
+                let check_value = if required.trim {
+                    result.trim()
+                } else {
+                    &result[..]
+                };
+                attempts += 1;
+                if !check_value.is_empty()
+                    || (required.max_attempts > 0
+                        && attempts >= required.max_attempts)
+                {
+                    break;
+                }
             }
         }
         value
@@ -104,14 +108,18 @@ pub fn parse<'a, T, W, S: AsRef<str>>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<T>
+) -> Result<Option<T>>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: Error + Sync + Send + 'static,
     W: Write,
 {
-    let value: String = prompt(prefix.as_ref(), writer, options)?;
-    let value: T = (&value[..]).parse::<T>()?;
+    let value: Option<String> = prompt(prefix.as_ref(), writer, options)?;
+    let value: Option<T> = if let Some(result) = &value {
+        Some((&result[..]).parse::<T>()?)
+    } else {
+        None
+    };
     Ok(value)
 }
 
@@ -119,25 +127,31 @@ fn validate<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
     let mut value = if let Some(validation) = &options.validation {
         let value = run(prefix.as_ref(), writer, options)?;
-        if (validation.validate)(&value) {
-            value
+        if let Some(result) = &value {
+            if (validation.validate)(result) {
+                value
+            } else {
+                validate(prefix.as_ref(), writer, options)?
+            }
         } else {
-            validate(prefix.as_ref(), writer, options)?
+            None
         }
     } else {
         run(prefix.as_ref(), writer, options)?
     };
 
     if let Some(transformer) = &options.transformer {
-        value = match (transformer.transform)(&value) {
-            Cow::Borrowed(_) => value,
-            Cow::Owned(s) => s,
+        if let Some(result) = value {
+            value = match (transformer.transform)(&result) {
+                Cow::Borrowed(_) => Some(result),
+                Cow::Owned(s) => Some(s),
+            }
         }
     }
 
@@ -148,11 +162,13 @@ fn run<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
     enable_raw_mode()?;
+
+    let mut aborted: bool = false;
 
     let _guard = scopeguard::guard((), |_| {
         let _ = disable_raw_mode();
@@ -224,7 +240,7 @@ where
                                     break 'prompt;
                                 }
                             }
-                            Command::MoveCursorLeft => {
+                            Command::BackwardChar => {
                                 if column as usize > buf.prefix_columns() {
                                     writer.execute(cursor::MoveTo(
                                         column - 1,
@@ -232,7 +248,7 @@ where
                                     ))?;
                                 }
                             }
-                            Command::MoveCursorRight => {
+                            Command::ForwardChar => {
                                 let position = buf.end_pos(buf.buffer());
 
                                 if column < position.0 {
@@ -245,8 +261,9 @@ where
                             Command::BackwardDeleteChar => {
                                 buf.erase_before(writer, 1)?;
                             }
-                            Command::AbortPrompt => {
+                            Command::Abort => {
                                 writer.execute(cursor::MoveToNextLine(1))?;
+                                aborted = true;
                                 break 'prompt;
                             }
                             Command::ClearScreen => {
@@ -341,5 +358,5 @@ where
         }
     }
 
-    Ok(buf.into())
+    Ok(if aborted { None } else { Some(buf.into()) })
 }

@@ -3,20 +3,20 @@
 /// Commands executed by the prompt.
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
+    /// Abort the prompt (`abort`).
+    Abort,
     /// Write the character to the terminal.
     WriteChar(char),
     /// Accept the line (`accept-line`).
     AcceptLine,
-    /// Move cursor left.
-    MoveCursorLeft,
-    /// Move cursor right.
-    MoveCursorRight,
+    /// Move cursor left (`backward-char`).
+    BackwardChar,
+    /// Move cursor right (`forward-char`).
+    ForwardChar,
     /// Erase the last character (`backward-delete-char`).
     BackwardDeleteChar,
     /// Clear the screen (`clear-screen`).
     ClearScreen,
-    /// Abort the prompt.
-    AbortPrompt,
     /// Move to beginning of the line.
     MoveToLineBegin,
     /// Move to end of the line.
@@ -36,7 +36,6 @@ pub enum Command {
 
     // TODO: Ctrl+f
     //ForwardWord,
-
     /// Go to previous history item (`previous-history`).
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]

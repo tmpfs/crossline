@@ -57,7 +57,6 @@ impl Lines {
             rows
         }
     }
-
 }
 
 /// Internal buffer for a string that operates on columns
