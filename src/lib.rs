@@ -335,7 +335,9 @@ where
                 }
             }
             Event::Mouse(_event) => {}
-            Event::Resize(_width, _height) => {}
+            Event::Resize(width, height) => {
+                buf.resize((width, height));
+            }
         }
     }
 

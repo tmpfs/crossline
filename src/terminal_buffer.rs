@@ -45,6 +45,20 @@ fn count_prompt_rows(
     }
 }
 
+/// Virtualized view of the string buffer as a
+/// series of wrapped rows.
+struct Lines {
+    count: usize,
+    current: usize,
+}
+
+impl Lines {
+    /// Determine if the cursor is on the first line of input.
+    fn is_first_line(&self) -> bool {
+        self.current == 0
+    }
+}
+
 /// Internal buffer for a string that operates on columns
 /// and rows and may include a prefix to the buffer value.
 pub struct TerminalBuffer<'a> {
@@ -56,9 +70,7 @@ pub struct TerminalBuffer<'a> {
     size: Dimension,
     start_position: Position,
     position: Position,
-    // Number of rows being rendered
-    row_count: usize,
-    current_row: usize,
+    lines: Lines,
 }
 
 impl<'a> TerminalBuffer<'a> {
@@ -71,6 +83,11 @@ impl<'a> TerminalBuffer<'a> {
     ) -> Self {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
         let buffer = String::new();
+
+        let count = count_prompt_rows(&size, prefix, &buffer, prefix_cols, 0);
+
+        let lines = Lines { current: 0, count };
+
         Self {
             prefix,
             prefix_cols,
@@ -78,22 +95,10 @@ impl<'a> TerminalBuffer<'a> {
             echo,
             start_position: position.clone(),
             position,
-            row_count: count_prompt_rows(
-                &size,
-                prefix,
-                &buffer,
-                prefix_cols,
-                0,
-            ),
-            current_row: 0,
             size,
             buffer,
+            lines,
         }
-    }
-
-    /// Determine if the cursor is on the first line of input.
-    pub fn is_first_line(&self) -> bool {
-        self.current_row == 0
     }
 
     /// Get the underlying buffer.
@@ -142,6 +147,13 @@ impl<'a> TerminalBuffer<'a> {
     fn update<S: AsRef<str>>(&mut self, value: S) {
         self.buffer_cols = UnicodeWidthStr::width(&value.as_ref()[..]);
         self.buffer = value.as_ref().to_string();
+    }
+
+    /// Resize the dimensions and update computations.
+    pub fn resize(&mut self, size: Dimension) {
+        self.set_size(size);
+        let copy = self.buffer.clone();
+        self.update(copy);
     }
 
     /// Push a character onto the buffer and write it but do not flush
@@ -293,7 +305,7 @@ impl<'a> TerminalBuffer<'a> {
 
         writer.queue(cursor::MoveTo(0, row))?;
         writer.queue(Clear(ClearType::CurrentLine))?;
-        if self.is_first_line() {
+        if self.lines.is_first_line() {
             writer.write(self.prefix.as_bytes())?;
         }
         writer.write(self.visible().as_ref().as_bytes())?;
@@ -325,7 +337,7 @@ impl<'a> TerminalBuffer<'a> {
         let graphemes = self.graphemes();
 
         let (col, row) = self.position;
-        let pos = if self.is_first_line() {
+        let pos = if self.lines.is_first_line() {
             col as usize - self.prefix_cols
         } else {
             col as usize
@@ -356,14 +368,14 @@ impl<'a> TerminalBuffer<'a> {
         let num_rows = self.count_rows();
 
         // Moving on original line
-        let new_pos = if num_rows == self.row_count {
+        let new_pos = if num_rows == self.lines.count {
             ((self.prefix_cols + pos + 1) as u16, row)
         // Wrapping on to new line
         } else {
-            self.current_row = num_rows - self.row_count;
+            self.lines.current = num_rows - self.lines.count;
             (
                 0,
-                (self.start_position.1 as usize + self.current_row)
+                (self.start_position.1 as usize + self.lines.current)
                     .try_into()?,
             )
         };
