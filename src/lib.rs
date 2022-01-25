@@ -8,7 +8,7 @@ use crossterm::{
     cursor::{self, position},
     event::{read, Event},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
-    ExecutableCommand, QueueableCommand,
+    ExecutableCommand,
 };
 use std::borrow::Cow;
 use std::error::Error;
@@ -267,9 +267,7 @@ where
                                 break 'prompt;
                             }
                             Command::ClearScreen => {
-                                writer.queue(Clear(ClearType::All))?;
-                                writer.queue(cursor::MoveTo(0, 0))?;
-                                buf.write_prefix(writer)?;
+                                buf.clear_screen(writer)?;
                             }
                             Command::BeginningOfLine => {
                                 writer.execute(cursor::MoveTo(
@@ -277,7 +275,7 @@ where
                                     row,
                                 ))?;
                             }
-                            Command::MoveToLineEnd => {
+                            Command::EndOfLine => {
                                 let position = buf.end_pos(buf.buffer());
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
@@ -289,7 +287,7 @@ where
                                     buf.erase_before(writer, amount as usize)?;
                                 }
                             }
-                            Command::EraseToLineEnd => {
+                            Command::KillLine => {
                                 if (column as usize) < buf.columns() {
                                     let amount =
                                         buf.columns() - (column as usize);

@@ -180,7 +180,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('e'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::MoveToLineEnd]),
+                actions: Box::new(|_| vec![Command::EndOfLine]),
             },
             // Ctrl+u
             KeyDefinition {
@@ -198,7 +198,7 @@ impl Default for KeyBindings {
                     code: KeyCode::Char('k'),
                     modifiers: KeyModifiers::CONTROL,
                 }),
-                actions: Box::new(|_| vec![Command::EraseToLineEnd]),
+                actions: Box::new(|_| vec![Command::KillLine]),
             },
             // Ctrl+w
             KeyDefinition {

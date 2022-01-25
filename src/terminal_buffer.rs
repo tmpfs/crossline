@@ -21,8 +21,12 @@ type Dimension = (u16, u16);
 /// Virtualized view of the string buffer as a
 /// series of wrapped rows.
 struct Lines {
+    /// Total number of lines.
     count: usize,
+    /// Current active line where the cursor is.
     current: usize,
+    /// Break points for newlines as columns.
+    newlines: Vec<usize>,
 }
 
 impl Lines {
@@ -40,21 +44,42 @@ impl Lines {
         buffer: &str,
         prefix_cols: usize,
         buffer_cols: usize,
+        newlines: &mut Vec<usize>,
     ) -> usize {
         let width = size.0 as usize;
-        let mut rows = (prefix_cols + buffer_cols) / width;
-        if rows % width != 0 {
-            rows += 1;
-        }
-        for c in prefix.chars().chain(buffer.chars()) {
-            if c == '\n' {
-                rows += 1;
-            }
-        }
-        if rows == 0 {
+
+        if prefix_cols + buffer_cols <= width {
             1
         } else {
-            rows
+            let graphemes = UnicodeSegmentation::graphemes(prefix, true)
+                .chain(UnicodeSegmentation::graphemes(buffer, true));
+            let mut rows = 0;
+            for (index, grapheme) in graphemes.enumerate() {
+                if grapheme == "\n" || index % width == 0 {
+                    rows += 1;
+                    newlines.push(index);
+                }
+            }
+
+            //let buffer_graphemes =
+            //UnicodeSegmentation::graphemes(prefix, true)
+            //.collect::<Vec<&str>>();
+
+            //let mut rows = (prefix_cols + buffer_cols) / width;
+            //if rows % width != 0 {
+            //rows += 1;
+            //}
+            //for c in prefix.chars().chain(buffer.chars()) {
+            //if c == '\n' {
+            //rows += 1;
+            //}
+            //}
+
+            if rows == 0 {
+                1
+            } else {
+                rows
+            }
         }
     }
 }
@@ -84,8 +109,14 @@ impl<'a> TerminalBuffer<'a> {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
         let buffer = String::new();
 
-        let count = Lines::count(&size, prefix, &buffer, prefix_cols, 0);
-        let lines = Lines { current: 0, count };
+        let mut newlines = Vec::new();
+        let count =
+            Lines::count(&size, prefix, &buffer, prefix_cols, 0, &mut newlines);
+        let lines = Lines {
+            current: 0,
+            count,
+            newlines,
+        };
 
         Self {
             prefix,
@@ -117,14 +148,50 @@ impl<'a> TerminalBuffer<'a> {
     }
     */
 
-    fn count_rows(&self) -> usize {
-        Lines::count(
+    /*
+    fn relative(&self) -> (u16, u16) {
+        let rel_col = if self.position.0 >= self.start_position.0 {
+            self.position.0 - self.start_position.0
+        } else {
+            0
+        };
+
+        let rel_row = if self.position.1 >= self.start_position.1 {
+            self.position.1 - self.start_position.1
+        } else {
+            0
+        };
+
+        (rel_col, rel_row)
+    }
+    */
+
+    pub fn clear_screen<W>(&mut self, writer: &mut W) -> Result<()>
+    where
+        W: Write,
+    {
+        writer.queue(Clear(ClearType::All))?;
+        writer.queue(cursor::MoveTo(0, 0))?;
+        self.position = (0, 0);
+        self.start_position = (0, 0);
+        // FIXME: maintain current relative cursor position
+        let pos = self.end_pos(&self.buffer);
+        self.redraw(writer, pos)?;
+        Ok(())
+    }
+
+    fn count_rows(&mut self) -> usize {
+        let newlines = &mut self.lines.newlines;
+        let count = Lines::count(
             &self.size,
             self.prefix,
             &self.buffer,
             self.prefix_cols,
             self.buffer_cols,
-        )
+            newlines,
+        );
+        self.lines.count = count;
+        count
     }
 
     /// Get the total column width for the prefix and buffer.
@@ -302,14 +369,48 @@ impl<'a> TerminalBuffer<'a> {
     {
         let (col, row) = position;
 
-        writer.queue(cursor::MoveTo(0, row))?;
-        writer.queue(Clear(ClearType::CurrentLine))?;
-        if self.lines.is_first_line() {
-            writer.write(self.prefix.as_bytes())?;
+        if self.lines.count == 1 {
+            writer.queue(cursor::MoveTo(0, row))?;
+            writer.queue(Clear(ClearType::CurrentLine))?;
+            if self.lines.is_first_line() {
+                writer.write(self.prefix.as_bytes())?;
+            }
+            writer.write(self.visible().as_ref().as_bytes())?;
+            writer.queue(cursor::MoveTo(col, row))?;
+            writer.flush()?;
+        } else {
+            writer.queue(cursor::MoveTo(0, self.start_position.1))?;
+            writer.queue(Clear(ClearType::CurrentLine))?;
+            writer.queue(Clear(ClearType::FromCursorDown))?;
+            writer.queue(cursor::MoveTo(0, self.start_position.1))?;
+
+            let mut it = self.lines.newlines.iter().skip(1);
+            let breakpoint = it.next();
+            let mut buffer = String::new();
+            let graphemes = UnicodeSegmentation::graphemes(self.prefix, true)
+                .chain(UnicodeSegmentation::graphemes(&self.buffer[..], true));
+            for (index, grapheme) in graphemes.enumerate() {
+                buffer.push_str(grapheme);
+                if let Some(breakpoint) = breakpoint {
+                    if index == *breakpoint {
+                        writer.write(buffer.as_bytes())?;
+                        buffer = String::new();
+                        writer.queue(cursor::MoveToNextLine(1))?;
+                        writer.flush()?;
+                    }
+                }
+            }
+
+            //for breakpoint in self.lines.newlines.iter().skip(1) {
+            //println!("Breakpoint {}", breakpoint);
+            //}
+
+            //writer.write(self.prefix.as_bytes())?;
+            //writer.write(self.visible().as_ref().as_bytes())?;
+            //writer.queue(cursor::MoveTo(col, row))?;
+            writer.flush()?;
         }
-        writer.write(self.visible().as_ref().as_bytes())?;
-        writer.queue(cursor::MoveTo(col, row))?;
-        writer.flush()?;
+
         Ok(())
     }
 

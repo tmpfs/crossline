@@ -36,7 +36,6 @@ pub enum Command {
 
     // TODO: Ctrl+f
     //ForwardWord,
-
     /// Go to previous history item (`previous-history`).
     #[cfg(any(feature = "history", doc))]
     #[doc(cfg(feature = "history"))]
