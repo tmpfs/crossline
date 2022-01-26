@@ -53,33 +53,17 @@ impl Lines {
         } else {
             let graphemes = UnicodeSegmentation::graphemes(prefix, true)
                 .chain(UnicodeSegmentation::graphemes(buffer, true));
-            let mut rows = 0;
+            let mut rows = 1;
             for (index, grapheme) in graphemes.enumerate() {
-                if grapheme == "\n" || index % width == 0 {
+                if grapheme == "\n" || (index > 0 && index % width == 0) {
                     rows += 1;
                     newlines.push(index);
                 }
             }
 
-            //let buffer_graphemes =
-            //UnicodeSegmentation::graphemes(prefix, true)
-            //.collect::<Vec<&str>>();
+            eprintln!("rows {:#?}", rows);
 
-            //let mut rows = (prefix_cols + buffer_cols) / width;
-            //if rows % width != 0 {
-            //rows += 1;
-            //}
-            //for c in prefix.chars().chain(buffer.chars()) {
-            //if c == '\n' {
-            //rows += 1;
-            //}
-            //}
-
-            if rows == 0 {
-                1
-            } else {
-                rows
-            }
+            rows
         }
     }
 }
@@ -181,15 +165,16 @@ impl<'a> TerminalBuffer<'a> {
     }
 
     fn count_rows(&mut self) -> usize {
-        let newlines = &mut self.lines.newlines;
+        let mut newlines = Vec::new();
         let count = Lines::count(
             &self.size,
             self.prefix,
             &self.buffer,
             self.prefix_cols,
             self.buffer_cols,
-            newlines,
+            &mut newlines,
         );
+        self.lines.newlines = newlines;
         self.lines.count = count;
         count
     }
@@ -384,7 +369,7 @@ impl<'a> TerminalBuffer<'a> {
             writer.queue(Clear(ClearType::FromCursorDown))?;
             writer.queue(cursor::MoveTo(0, self.start_position.1))?;
 
-            let mut it = self.lines.newlines.iter().skip(1);
+            let mut it = self.lines.newlines.iter();
             let breakpoint = it.next();
             let mut buffer = String::new();
             let graphemes = UnicodeSegmentation::graphemes(self.prefix, true)
@@ -395,20 +380,11 @@ impl<'a> TerminalBuffer<'a> {
                     if index == *breakpoint {
                         writer.write(buffer.as_bytes())?;
                         buffer = String::new();
-                        writer.queue(cursor::MoveToNextLine(1))?;
+                        //writer.queue(cursor::MoveToNextLine(1))?;
                         writer.flush()?;
                     }
                 }
             }
-
-            //for breakpoint in self.lines.newlines.iter().skip(1) {
-            //println!("Breakpoint {}", breakpoint);
-            //}
-
-            //writer.write(self.prefix.as_bytes())?;
-            //writer.write(self.visible().as_ref().as_bytes())?;
-            //writer.queue(cursor::MoveTo(col, row))?;
-            writer.flush()?;
         }
 
         Ok(())
@@ -466,13 +442,16 @@ impl<'a> TerminalBuffer<'a> {
         // We have an updated buffer column count so can
         // calculate the rows
         let num_rows = self.count_rows();
+        self.lines.current = num_rows - 1;
+
+        eprintln!("Num rows {}", num_rows);
 
         // Moving on original line
-        let new_pos = if num_rows == self.lines.count {
+        let new_pos = if num_rows == 1 {
             ((self.prefix_cols + pos + 1) as u16, row)
         // Wrapping on to new line
         } else {
-            self.lines.current = num_rows - self.lines.count;
+            eprintln!("Rendering char with multiple lines {}", self.lines.current);
             (
                 0,
                 (self.start_position.1 as usize + self.lines.current)
