@@ -8,6 +8,8 @@ fn main() -> Result<()> {
     let mut stdout = std::io::stdout();
     let value =
         prompt("What is your name? ", &mut stdout, &Default::default())?;
-    println!("Hello, {}!", value);
+    if let Some(result) = &value {
+        println!("Hello, {}!", result);
+    }
     Ok(())
 }

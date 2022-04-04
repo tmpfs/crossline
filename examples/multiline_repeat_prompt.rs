@@ -10,6 +10,8 @@ fn main() -> Result<()> {
         repeat_prompt: true,
     });
     let value = prompt("multiline text> ", &mut stdout, &options)?;
-    println!("value: {}", value);
+    if let Some(result) = &value {
+        println!("value: {}", result);
+    }
     Ok(())
 }

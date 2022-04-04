@@ -15,6 +15,59 @@ use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+type Position = (u16, u16);
+type Dimension = (u16, u16);
+
+/// Virtualized view of the string buffer as a
+/// series of wrapped rows.
+struct Lines {
+    /// Total number of lines.
+    count: usize,
+    /// Current active line where the cursor is.
+    current: usize,
+    /// Break points for newlines as columns.
+    newlines: Vec<usize>,
+}
+
+impl Lines {
+    /// Determine if the cursor is on the first line of input.
+    fn is_first_line(&self) -> bool {
+        self.current == 0
+    }
+
+    /// Count the number of rows occupied by a prefix and buffer
+    /// accounting for wrapping to the terminal width and any newlines
+    /// in the prefix or buffer.
+    fn count(
+        size: &Dimension,
+        prefix: &str,
+        buffer: &str,
+        prefix_cols: usize,
+        buffer_cols: usize,
+        newlines: &mut Vec<usize>,
+    ) -> usize {
+        let width = size.0 as usize;
+
+        if prefix_cols + buffer_cols <= width {
+            1
+        } else {
+            let graphemes = UnicodeSegmentation::graphemes(prefix, true)
+                .chain(UnicodeSegmentation::graphemes(buffer, true));
+            let mut rows = 1;
+            for (index, grapheme) in graphemes.enumerate() {
+                if grapheme == "\n" || (index > 0 && index % width == 0) {
+                    rows += 1;
+                    newlines.push(index);
+                }
+            }
+
+            eprintln!("rows {:#?}", rows);
+
+            rows
+        }
+    }
+}
+
 /// Internal buffer for a string that operates on columns
 /// and rows and may include a prefix to the buffer value.
 pub struct TerminalBuffer<'a> {
@@ -23,22 +76,42 @@ pub struct TerminalBuffer<'a> {
     prefix_cols: usize,
     buffer_cols: usize,
     echo: Option<char>,
-    size: (u16, u16),
-    position: (u16, u16),
+    size: Dimension,
+    start_position: Position,
+    position: Position,
+    lines: Lines,
 }
 
 impl<'a> TerminalBuffer<'a> {
     /// Create a new buffer using the given prefix and mask character.
-    pub fn new(prefix: &'a str, echo: Option<char>) -> Self {
+    pub fn new(
+        prefix: &'a str,
+        size: Dimension,
+        position: Position,
+        echo: Option<char>,
+    ) -> Self {
         let prefix_cols: usize = UnicodeWidthStr::width(prefix);
+        let buffer = String::new();
+
+        let mut newlines = Vec::new();
+        let count =
+            Lines::count(&size, prefix, &buffer, prefix_cols, 0, &mut newlines);
+        let lines = Lines {
+            current: 0,
+            count,
+            newlines,
+        };
+
         Self {
             prefix,
             prefix_cols,
-            buffer: String::new(),
             buffer_cols: 0,
             echo,
-            size: (0, 0),
-            position: (0, 0),
+            start_position: position.clone(),
+            position,
+            size,
+            buffer,
+            lines,
         }
     }
 
@@ -59,25 +132,79 @@ impl<'a> TerminalBuffer<'a> {
     }
     */
 
+    /*
+    fn relative(&self) -> (u16, u16) {
+        let rel_col = if self.position.0 >= self.start_position.0 {
+            self.position.0 - self.start_position.0
+        } else {
+            0
+        };
+
+        let rel_row = if self.position.1 >= self.start_position.1 {
+            self.position.1 - self.start_position.1
+        } else {
+            0
+        };
+
+        (rel_col, rel_row)
+    }
+    */
+
+    pub fn clear_screen<W>(&mut self, writer: &mut W) -> Result<()>
+    where
+        W: Write,
+    {
+        writer.queue(Clear(ClearType::All))?;
+        writer.queue(cursor::MoveTo(0, 0))?;
+        self.position = (0, 0);
+        self.start_position = (0, 0);
+        // FIXME: maintain current relative cursor position
+        let pos = self.end_pos(&self.buffer);
+        self.redraw(writer, pos)?;
+        Ok(())
+    }
+
+    fn count_rows(&mut self) -> usize {
+        let mut newlines = Vec::new();
+        let count = Lines::count(
+            &self.size,
+            self.prefix,
+            &self.buffer,
+            self.prefix_cols,
+            self.buffer_cols,
+            &mut newlines,
+        );
+        self.lines.newlines = newlines;
+        self.lines.count = count;
+        count
+    }
+
     /// Get the total column width for the prefix and buffer.
     pub fn columns(&self) -> usize {
         self.prefix_cols + self.buffer_cols
     }
 
     /// Set the terminal size.
-    pub fn set_size(&mut self, size: (u16, u16)) {
+    pub fn set_size(&mut self, size: Dimension) {
         self.size = size;
     }
 
     /// Set the cursor position.
-    pub fn set_position(&mut self, position: (u16, u16)) {
+    pub fn set_position(&mut self, position: Position) {
         self.position = position;
     }
 
     /// Update the buffer to a new value.
-    fn update(&mut self, value: String) {
-        self.buffer_cols = UnicodeWidthStr::width(&value[..]);
-        self.buffer = value;
+    fn update<S: AsRef<str>>(&mut self, value: S) {
+        self.buffer_cols = UnicodeWidthStr::width(&value.as_ref()[..]);
+        self.buffer = value.as_ref().to_string();
+    }
+
+    /// Resize the dimensions and update computations.
+    pub fn resize(&mut self, size: Dimension) {
+        self.set_size(size);
+        self.buffer_cols = UnicodeWidthStr::width(&self.buffer[..]);
+        self.count_rows();
     }
 
     /// Push a character onto the buffer and write it but do not flush
@@ -221,17 +348,45 @@ impl<'a> TerminalBuffer<'a> {
 
     /// Redraw the prefix and buffer moving the cursor
     /// to the given position.
-    pub fn redraw<W>(&self, writer: &mut W, position: (u16, u16)) -> Result<()>
+    pub fn redraw<W>(&self, writer: &mut W, position: Position) -> Result<()>
     where
         W: Write,
     {
         let (col, row) = position;
-        writer.queue(cursor::MoveTo(0, row))?;
-        writer.queue(Clear(ClearType::CurrentLine))?;
-        writer.write(self.prefix.as_bytes())?;
-        writer.write(self.visible().as_ref().as_bytes())?;
-        writer.queue(cursor::MoveTo(col, row))?;
-        writer.flush()?;
+
+        if self.lines.count == 1 {
+            writer.queue(cursor::MoveTo(0, row))?;
+            writer.queue(Clear(ClearType::CurrentLine))?;
+            if self.lines.is_first_line() {
+                writer.write(self.prefix.as_bytes())?;
+            }
+            writer.write(self.visible().as_ref().as_bytes())?;
+            writer.queue(cursor::MoveTo(col, row))?;
+            writer.flush()?;
+        } else {
+            writer.queue(cursor::MoveTo(0, self.start_position.1))?;
+            writer.queue(Clear(ClearType::CurrentLine))?;
+            writer.queue(Clear(ClearType::FromCursorDown))?;
+            writer.queue(cursor::MoveTo(0, self.start_position.1))?;
+
+            let mut it = self.lines.newlines.iter();
+            let breakpoint = it.next();
+            let mut buffer = String::new();
+            let graphemes = UnicodeSegmentation::graphemes(self.prefix, true)
+                .chain(UnicodeSegmentation::graphemes(&self.buffer[..], true));
+            for (index, grapheme) in graphemes.enumerate() {
+                buffer.push_str(grapheme);
+                if let Some(breakpoint) = breakpoint {
+                    if index == *breakpoint {
+                        writer.write(buffer.as_bytes())?;
+                        buffer = String::new();
+                        //writer.queue(cursor::MoveToNextLine(1))?;
+                        writer.flush()?;
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -258,7 +413,12 @@ impl<'a> TerminalBuffer<'a> {
         let graphemes = self.graphemes();
 
         let (col, row) = self.position;
-        let pos = col as usize - self.prefix_cols;
+        let pos = if self.lines.is_first_line() {
+            col as usize - self.prefix_cols
+        } else {
+            col as usize
+        };
+
         let char_str = c.to_string();
 
         // Appending to the end
@@ -279,7 +439,26 @@ impl<'a> TerminalBuffer<'a> {
         // Store the updated buffer
         self.update(new_buf);
 
-        let new_pos = ((self.prefix_cols + pos + 1) as u16, row);
+        // We have an updated buffer column count so can
+        // calculate the rows
+        let num_rows = self.count_rows();
+        self.lines.current = num_rows - 1;
+
+        eprintln!("Num rows {}", num_rows);
+
+        // Moving on original line
+        let new_pos = if num_rows == 1 {
+            ((self.prefix_cols + pos + 1) as u16, row)
+        // Wrapping on to new line
+        } else {
+            eprintln!("Rendering char with multiple lines {}", self.lines.current);
+            (
+                0,
+                (self.start_position.1 as usize + self.lines.current)
+                    .try_into()?,
+            )
+        };
+
         self.redraw(writer, new_pos)?;
 
         Ok(())

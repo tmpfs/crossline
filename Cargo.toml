@@ -1,5 +1,5 @@
 [package]
-name = "crossterm-prompt"
+name = "crossline"
 version = "0.1.0"
 edition = "2021"
 keywords = ["crossterm", "terminal", "prompt", "password", "shell"]

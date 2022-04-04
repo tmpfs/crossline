@@ -3,7 +3,7 @@
 /// Options for history implementations.
 pub struct HistoryOptions {
     /// Maximum number of history items.
-    maximum_size: u16,
+    maximum_size: usize,
 }
 
 impl Default for HistoryOptions {
@@ -12,18 +12,14 @@ impl Default for HistoryOptions {
     }
 }
 
+// TODO: implement backing file locked using file-guard
+// TODO: file write should happen when the program exits
+//
+// TODO: implement searching history
+
 /// Trait for history implementations.
 pub trait History {
-    /// Get the underlying history items.
-    fn items(&self) -> &Vec<String>;
-
-    /// Get the number of items in the history.
-    fn len(&self) -> usize;
-
-    /// Determine if this history is empty.
-    fn is_empty(&self) -> bool;
-
-    /// Determine if the cursor point to the last entry.
+    /// Determine if the cursor points to the last entry.
     fn is_last(&self) -> bool;
 
     /// Remove all the history items and reset the cursor.
@@ -41,9 +37,6 @@ pub trait History {
     /// Move the current cursor position and get an item
     /// at the new position.
     fn move_by(&mut self, amount: i16) -> Option<&String>;
-
-    /// Get the position of the cursor.
-    fn position(&self) -> &Option<usize>;
 
     /// Move the cursor to the previous entry in the history.
     fn previous(&mut self) -> Option<&String>;
@@ -64,7 +57,7 @@ impl MemoryHistory {
     /// Create a new in-memory history.
     pub fn new(options: HistoryOptions) -> Self {
         Self {
-            items: vec![],
+            items: Vec::with_capacity(options.maximum_size),
             cursor: None,
             options,
         }
@@ -72,22 +65,6 @@ impl MemoryHistory {
 }
 
 impl History for MemoryHistory {
-    fn items(&self) -> &Vec<String> {
-        &self.items
-    }
-
-    fn position(&self) -> &Option<usize> {
-        &self.cursor
-    }
-
-    fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
     fn is_last(&self) -> bool {
         if let Some(cursor) = self.cursor {
             cursor == self.items.len()

@@ -15,6 +15,8 @@ fn main() -> Result<()> {
         &mut stdout,
         &options,
     )?;
-    println!(r#"value: "{}""#, value);
+    if let Some(result) = &value {
+        println!(r#"trimmed: "{}""#, result);
+    }
     Ok(())
 }

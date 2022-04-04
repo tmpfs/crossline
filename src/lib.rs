@@ -5,15 +5,16 @@
 //! Prompt library for crossterm.
 use anyhow::{bail, Result};
 use crossterm::{
-    cursor,
+    cursor::{self, position},
     event::{read, Event},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
-    ExecutableCommand, QueueableCommand,
+    ExecutableCommand,
 };
 use std::borrow::Cow;
 use std::error::Error;
 use std::io::Write;
 
+mod command;
 mod key_binding;
 mod options;
 
@@ -21,11 +22,12 @@ mod options;
 #[doc(cfg(feature = "panic"))]
 mod panic;
 
+mod terminal_buffer;
+
 #[cfg(feature = "panic")]
 pub use panic::{stderr_panic_hook, stdout_panic_hook};
 
-mod terminal_buffer;
-
+pub use command::Command;
 pub use key_binding::*;
 pub use options::*;
 use terminal_buffer::TerminalBuffer;
@@ -48,7 +50,7 @@ where
     W: Write,
     O: Fn() -> &'a PromptOptions,
     E: Error + Send + Sync + 'static,
-    H: Fn(String) -> std::result::Result<(), E>,
+    H: Fn(Option<String>) -> std::result::Result<(), E>,
 {
     loop {
         let prompt_prefix = (prefix)();
@@ -59,11 +61,13 @@ where
 }
 
 /// Show a prompt.
+///
+/// If the prompt is aborted the return value will be `None`.
 pub fn prompt<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
@@ -76,17 +80,19 @@ where
         let mut attempts = 0u16;
         loop {
             value = validate(prefix.as_ref(), writer, options)?;
-            let check_value = if required.trim {
-                value.trim()
-            } else {
-                &value[..]
-            };
-            attempts += 1;
-            if !check_value.is_empty()
-                || (required.max_attempts > 0
-                    && attempts >= required.max_attempts)
-            {
-                break;
+            if let Some(result) = &value {
+                let check_value = if required.trim {
+                    result.trim()
+                } else {
+                    &result[..]
+                };
+                attempts += 1;
+                if !check_value.is_empty()
+                    || (required.max_attempts > 0
+                        && attempts >= required.max_attempts)
+                {
+                    break;
+                }
             }
         }
         value
@@ -102,14 +108,18 @@ pub fn parse<'a, T, W, S: AsRef<str>>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<T>
+) -> Result<Option<T>>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: Error + Sync + Send + 'static,
     W: Write,
 {
-    let value: String = prompt(prefix.as_ref(), writer, options)?;
-    let value: T = (&value[..]).parse::<T>()?;
+    let value: Option<String> = prompt(prefix.as_ref(), writer, options)?;
+    let value: Option<T> = if let Some(result) = &value {
+        Some((&result[..]).parse::<T>()?)
+    } else {
+        None
+    };
     Ok(value)
 }
 
@@ -117,25 +127,31 @@ fn validate<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
     let mut value = if let Some(validation) = &options.validation {
         let value = run(prefix.as_ref(), writer, options)?;
-        if (validation.validate)(&value) {
-            value
+        if let Some(result) = &value {
+            if (validation.validate)(result) {
+                value
+            } else {
+                validate(prefix.as_ref(), writer, options)?
+            }
         } else {
-            validate(prefix.as_ref(), writer, options)?
+            None
         }
     } else {
         run(prefix.as_ref(), writer, options)?
     };
 
     if let Some(transformer) = &options.transformer {
-        value = match (transformer.transform)(&value) {
-            Cow::Borrowed(_) => value,
-            Cow::Owned(s) => s,
+        if let Some(result) = value {
+            value = match (transformer.transform)(&result) {
+                Cow::Borrowed(_) => Some(result),
+                Cow::Owned(s) => Some(s),
+            }
         }
     }
 
@@ -146,11 +162,13 @@ fn run<'a, S: AsRef<str>, W>(
     prefix: S,
     writer: &'a mut W,
     options: &PromptOptions,
-) -> Result<String>
+) -> Result<Option<String>>
 where
     W: Write,
 {
     enable_raw_mode()?;
+
+    let mut aborted: bool = false;
 
     let _guard = scopeguard::guard((), |_| {
         let _ = disable_raw_mode();
@@ -161,7 +179,8 @@ where
     } else {
         None
     };
-    let mut buf = TerminalBuffer::new(prefix.as_ref(), echo);
+    let mut buf =
+        TerminalBuffer::new(prefix.as_ref(), size()?, position()?, echo);
 
     #[cfg(feature = "history")]
     let mut history_buffer = String::new();
@@ -171,7 +190,7 @@ where
 
     'prompt: loop {
         let (width, height) = size()?;
-        let (column, row) = cursor::position()?;
+        let (column, row) = position()?;
 
         buf.set_size((width, height));
         buf.set_position((column, row));
@@ -181,10 +200,10 @@ where
                 if let Some(actions) = options.bindings.first(&event) {
                     for action in actions {
                         match action {
-                            KeyAction::WriteChar(c) => {
+                            Command::WriteChar(c) => {
                                 buf.write_char(writer, c)?;
                             }
-                            KeyAction::SubmitLine => {
+                            Command::AcceptLine => {
                                 if let Some(multiline) = &options.multiline {
                                     buf.push(writer, '\n')?;
                                     writer
@@ -198,10 +217,14 @@ where
                                     }
                                 } else {
                                     #[cfg(feature = "history")]
-                                    if let Some(history) = &options.history {
-                                        let mut writer =
-                                            history.lock().unwrap();
-                                        writer.push(buf.buffer().to_string());
+                                    if options.password.is_none() {
+                                        if let Some(history) = &options.history
+                                        {
+                                            let mut writer =
+                                                history.lock().unwrap();
+                                            writer
+                                                .push(buf.buffer().to_string());
+                                        }
                                     }
 
                                     if row == height - 1 {
@@ -217,7 +240,7 @@ where
                                     break 'prompt;
                                 }
                             }
-                            KeyAction::MoveCursorLeft => {
+                            Command::BackwardChar => {
                                 if column as usize > buf.prefix_columns() {
                                     writer.execute(cursor::MoveTo(
                                         column - 1,
@@ -225,7 +248,7 @@ where
                                     ))?;
                                 }
                             }
-                            KeyAction::MoveCursorRight => {
+                            Command::ForwardChar => {
                                 let position = buf.end_pos(buf.buffer());
 
                                 if column < position.0 {
@@ -235,48 +258,47 @@ where
                                     ))?;
                                 }
                             }
-                            KeyAction::EraseCharacter => {
+                            Command::BackwardDeleteChar => {
                                 buf.erase_before(writer, 1)?;
                             }
-                            KeyAction::AbortPrompt => {
+                            Command::Abort => {
                                 writer.execute(cursor::MoveToNextLine(1))?;
+                                aborted = true;
                                 break 'prompt;
                             }
-                            KeyAction::ClearScreen => {
-                                writer.queue(Clear(ClearType::All))?;
-                                writer.queue(cursor::MoveTo(0, 0))?;
-                                buf.write_prefix(writer)?;
+                            Command::ClearScreen => {
+                                buf.clear_screen(writer)?;
                             }
-                            KeyAction::MoveToLineBegin => {
+                            Command::BeginningOfLine => {
                                 writer.execute(cursor::MoveTo(
                                     buf.prefix_columns().try_into()?,
                                     row,
                                 ))?;
                             }
-                            KeyAction::MoveToLineEnd => {
+                            Command::EndOfLine => {
                                 let position = buf.end_pos(buf.buffer());
                                 writer
                                     .execute(cursor::MoveTo(position.0, row))?;
                             }
-                            KeyAction::EraseToLineBegin => {
+                            Command::BackwardKillLine => {
                                 if (column as usize) > buf.prefix_columns() {
                                     let amount =
                                         column as usize - buf.prefix_columns();
                                     buf.erase_before(writer, amount as usize)?;
                                 }
                             }
-                            KeyAction::EraseToLineEnd => {
+                            Command::KillLine => {
                                 if (column as usize) < buf.columns() {
                                     let amount =
                                         buf.columns() - (column as usize);
                                     buf.erase_after(writer, amount as usize)?;
                                 }
                             }
-                            KeyAction::ErasePreviousWord => {
+                            Command::BackwardKillWord => {
                                 buf.erase_word_before(writer)?;
                             }
                             #[cfg(feature = "history")]
-                            KeyAction::HistoryPrevious => {
+                            Command::PreviousHistory => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
 
@@ -300,7 +322,7 @@ where
                                 }
                             }
                             #[cfg(feature = "history")]
-                            KeyAction::HistoryNext => {
+                            Command::NextHistory => {
                                 if let Some(history) = &options.history {
                                     let mut history = history.lock().unwrap();
                                     if let Some(history_line) = history.next() {
@@ -328,9 +350,11 @@ where
                 }
             }
             Event::Mouse(_event) => {}
-            Event::Resize(_width, _height) => {}
+            Event::Resize(width, height) => {
+                buf.resize((width, height));
+            }
         }
     }
 
-    Ok(buf.into())
+    Ok(if aborted { None } else { Some(buf.into()) })
 }
